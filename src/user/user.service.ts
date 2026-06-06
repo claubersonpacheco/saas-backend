@@ -1,12 +1,13 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
-import { QueryFailedError, Repository } from 'typeorm';
+import { In, QueryFailedError, Repository } from 'typeorm';
 import { Permission } from '../permission/permission.entity';
 import { Role } from '../role/role.entity';
 import { Setting } from '../setting/setting.entity';
@@ -25,6 +26,26 @@ type UploadedImageFile = {
   originalname: string;
   size: number;
 };
+
+type UserWriteOptions = {
+  allowMasterRole?: boolean;
+};
+
+const TENANT_ADMIN_PERMISSIONS = [
+  'users.read',
+  'users.create',
+  'users.update',
+  'users.delete',
+  'roles.read',
+  'roles.create',
+  'roles.update',
+  'roles.delete',
+  'permissions.read',
+  'settings.read',
+  'settings.create',
+  'settings.update',
+  'settings.delete',
+];
 
 @Injectable()
 export class UserService {
@@ -47,20 +68,6 @@ export class UserService {
     void password;
 
     return safeUser;
-  }
-
-  private normalizeCpfCnpj(value?: string | null): string | null {
-    const digits = value?.replace(/\D/g, '') ?? '';
-
-    if (!digits) {
-      return null;
-    }
-
-    if (![11, 14].includes(digits.length)) {
-      throw new BadRequestException('Informe um CPF ou CNPJ valido.');
-    }
-
-    return digits;
   }
 
   private async resolveTenant(
@@ -127,6 +134,7 @@ export class UserService {
   async create(
     createUserDto: CreateUserDto,
     currentTenantId?: number,
+    options: UserWriteOptions = {},
   ): Promise<UserResponse> {
     const tenant = await this.resolveTenant(createUserDto, currentTenantId);
     const normalizedEmail = createUserDto.email.trim().toLowerCase();
@@ -161,10 +169,17 @@ export class UserService {
 
     const role = roleId
       ? await this.roleRepository.findOneBy({ id: roleId, tenantId: tenant.id })
-      : await this.findOrCreateMasterRole(tenant.id);
+      : await this.findOrCreateAdminRole(tenant.id);
 
     if (roleId && !role) {
       throw new NotFoundException(`Role with id ${roleId} not found.`);
+    }
+
+    if (
+      role?.name.toLowerCase() === 'master' &&
+      options.allowMasterRole !== true
+    ) {
+      throw new ForbiddenException('Only master users can assign master role.');
     }
 
     const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
@@ -174,7 +189,6 @@ export class UserService {
       tenantId: tenant.id,
       email: normalizedEmail,
       username: normalizedUsername,
-      cpfCnpj: this.normalizeCpfCnpj(createUserDto.cpfCnpj),
       password: hashedPassword,
       role,
     });
@@ -222,9 +236,9 @@ export class UserService {
     return users[0] ?? null;
   }
 
-  private async findOrCreateMasterRole(tenantId: number): Promise<Role> {
+  private async findOrCreateAdminRole(tenantId: number): Promise<Role> {
     const existing = await this.roleRepository.findOne({
-      where: { tenantId, name: 'master' },
+      where: { tenantId, name: 'admin' },
       relations: { permissions: true },
     });
 
@@ -232,11 +246,13 @@ export class UserService {
       return existing;
     }
 
-    const permissions = await this.permissionRepository.find();
+    const permissions = await this.permissionRepository.findBy({
+      name: In(TENANT_ADMIN_PERMISSIONS),
+    });
     const role = this.roleRepository.create({
       tenantId,
-      name: 'master',
-      description: 'Full tenant administrator',
+      name: 'admin',
+      description: 'Tenant administrator',
       permissions,
     });
 
@@ -290,6 +306,7 @@ export class UserService {
     id: number,
     updateUserDto: UpdateUserDto,
     tenantId: number,
+    options: UserWriteOptions = {},
   ): Promise<UserResponse> {
     const user = await this.userRepository.findOne({
       where: { id, tenantId },
@@ -334,10 +351,6 @@ export class UserService {
 
     const { roleId, ...payload } = updateUserDto;
 
-    if (payload.cpfCnpj !== undefined) {
-      payload.cpfCnpj = this.normalizeCpfCnpj(payload.cpfCnpj) ?? undefined;
-    }
-
     if (updateUserDto.password) {
       payload.password = await bcrypt.hash(updateUserDto.password, 10);
     }
@@ -351,6 +364,13 @@ export class UserService {
 
     if (roleId !== undefined && roleId !== null && !role) {
       throw new NotFoundException(`Role with id ${roleId} not found.`);
+    }
+
+    if (
+      role?.name.toLowerCase() === 'master' &&
+      options.allowMasterRole !== true
+    ) {
+      throw new ForbiddenException('Only master users can assign master role.');
     }
 
     const updatedUser = this.userRepository.merge(user, {
@@ -384,7 +404,6 @@ export class UserService {
       name: true,
       lastname: true,
       email: true,
-      cpfCnpj: true,
       suspended: true,
       photoUrl: true,
       password: true,

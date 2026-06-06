@@ -28,11 +28,6 @@ export class CreateUserDto {
   email: string;
 
   @IsOptional()
-  @IsString()
-  @Length(11, 18)
-  cpfCnpj?: string;
-
-  @IsOptional()
   @IsInt()
   tenantId?: number;
 

@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -19,8 +20,17 @@ export class RoleService {
     private readonly permissionRepository: Repository<Permission>,
   ) {}
 
-  findAll(tenantId: number): Promise<Role[]> {
-    return this.roleRepository.find({ where: { tenantId }, order: { id: 'ASC' } });
+  async findAll(tenantId: number, includeMaster = false): Promise<Role[]> {
+    const roles = await this.roleRepository.find({
+      where: { tenantId },
+      order: { id: 'ASC' },
+    });
+
+    if (includeMaster) {
+      return roles;
+    }
+
+    return roles.filter((role) => role.name.toLowerCase() !== 'master');
   }
 
   async findOne(id: number, tenantId: number): Promise<Role> {
@@ -35,6 +45,33 @@ export class RoleService {
     }
 
     return role;
+  }
+
+  private assertMasterRoleAllowed(roleName: string, allowMaster: boolean): void {
+    if (roleName.trim().toLowerCase() === 'master' && !allowMaster) {
+      throw new ForbiddenException('Only master users can manage master role.');
+    }
+  }
+
+  private assertGlobalPermissionsAllowed(
+    permissions: Permission[],
+    allowGlobalPermissions: boolean,
+  ): void {
+    if (allowGlobalPermissions) {
+      return;
+    }
+
+    const hasGlobalPermission = permissions.some(
+      (permission) =>
+        permission.name.startsWith('tenants.') ||
+        permission.name.startsWith('plans.'),
+    );
+
+    if (hasGlobalPermission) {
+      throw new ForbiddenException(
+        'Only master users can assign tenant or plan permissions.',
+      );
+    }
   }
 
   private async findPermissions(permissionIds?: number[]): Promise<Permission[]> {
@@ -56,12 +93,15 @@ export class RoleService {
   private async syncPermissions(
     role: Role,
     permissionIds: number[] | undefined,
+    allowGlobalPermissions: boolean,
   ): Promise<void> {
     if (permissionIds === undefined) {
       return;
     }
 
     const permissions = await this.findPermissions(permissionIds);
+    this.assertGlobalPermissionsAllowed(permissions, allowGlobalPermissions);
+
     const currentPermissionIds = role.permissions?.map((permission) => permission.id) ?? [];
     const nextPermissionIds = permissions.map((permission) => permission.id);
 
@@ -83,8 +123,15 @@ export class RoleService {
       .addAndRemove(permissionsToAdd, permissionsToRemove);
   }
 
-  async create(dto: CreateRoleDto, tenantId: number): Promise<Role> {
+  async create(
+    dto: CreateRoleDto,
+    tenantId: number,
+    allowMaster = false,
+    allowGlobalPermissions = false,
+  ): Promise<Role> {
     const name = dto.name.trim();
+    this.assertMasterRoleAllowed(name, allowMaster);
+
     const existing = await this.roleRepository.findOneBy({ name, tenantId });
 
     if (existing) {
@@ -98,16 +145,29 @@ export class RoleService {
     });
 
     const createdRole = await this.roleRepository.save(role);
-    await this.syncPermissions(createdRole, dto.permissionIds);
+    await this.syncPermissions(
+      createdRole,
+      dto.permissionIds,
+      allowGlobalPermissions,
+    );
 
     return this.findOne(createdRole.id, tenantId);
   }
 
-  async update(id: number, dto: UpdateRoleDto, tenantId: number): Promise<Role> {
+  async update(
+    id: number,
+    dto: UpdateRoleDto,
+    tenantId: number,
+    allowMaster = false,
+    allowGlobalPermissions = false,
+  ): Promise<Role> {
     const role = await this.findOne(id, tenantId);
+    this.assertMasterRoleAllowed(role.name, allowMaster);
 
     if (dto.name !== undefined) {
       const name = dto.name.trim();
+      this.assertMasterRoleAllowed(name, allowMaster);
+
       const existing = await this.roleRepository.findOneBy({ name, tenantId });
 
       if (existing && existing.id !== id) {
@@ -123,13 +183,19 @@ export class RoleService {
     });
 
     const savedRole = await this.roleRepository.save(updated);
-    await this.syncPermissions(role, dto.permissionIds);
+    await this.syncPermissions(role, dto.permissionIds, allowGlobalPermissions);
 
     return this.findOne(savedRole.id, tenantId);
   }
 
-  async remove(id: number, tenantId: number): Promise<{ message: string }> {
+  async remove(
+    id: number,
+    tenantId: number,
+    allowMaster = false,
+  ): Promise<{ message: string }> {
     const role = await this.findOne(id, tenantId);
+    this.assertMasterRoleAllowed(role.name, allowMaster);
+
     await this.roleRepository.remove(role);
     return { message: 'Role deleted successfully.' };
   }

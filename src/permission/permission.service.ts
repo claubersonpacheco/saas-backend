@@ -16,8 +16,20 @@ export class PermissionService {
     private readonly permissionRepository: Repository<Permission>,
   ) {}
 
-  findAll(): Promise<Permission[]> {
-    return this.permissionRepository.find({ order: { id: 'ASC' } });
+  async findAll(options: { includeTenantPermissions?: boolean } = {}): Promise<Permission[]> {
+    const permissions = await this.permissionRepository.find({
+      order: { id: 'ASC' },
+    });
+
+    if (options.includeTenantPermissions) {
+      return permissions;
+    }
+
+    return permissions.filter(
+      (permission) =>
+        !permission.name.startsWith('tenants.') &&
+        !permission.name.startsWith('plans.'),
+    );
   }
 
   async findOne(id: number): Promise<Permission> {

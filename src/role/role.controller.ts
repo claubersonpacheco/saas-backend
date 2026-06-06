@@ -27,7 +27,10 @@ export class RoleController {
   @Get()
   @RequirePermissions('roles.read')
   findAll(@CurrentUser() user: AuthenticatedUser): Promise<Role[]> {
-    return this.roleService.findAll(user.tenantId);
+    return this.roleService.findAll(
+      user.tenantId,
+      user.role?.name.toLowerCase() === 'master',
+    );
   }
 
   @Get(':id')
@@ -45,7 +48,14 @@ export class RoleController {
     @Body() dto: CreateRoleDto,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<Role> {
-    return this.roleService.create(dto, user.tenantId);
+    const isMaster = user.role?.name.toLowerCase() === 'master';
+
+    return this.roleService.create(
+      dto,
+      user.tenantId,
+      isMaster,
+      isMaster,
+    );
   }
 
   @Patch(':id')
@@ -55,7 +65,15 @@ export class RoleController {
     @Body() dto: UpdateRoleDto,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<Role> {
-    return this.roleService.update(id, dto, user.tenantId);
+    const isMaster = user.role?.name.toLowerCase() === 'master';
+
+    return this.roleService.update(
+      id,
+      dto,
+      user.tenantId,
+      isMaster,
+      isMaster,
+    );
   }
 
   @Delete(':id')
@@ -64,6 +82,10 @@ export class RoleController {
     @Param('id', ParseIntPipe) id: number,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<{ message: string }> {
-    return this.roleService.remove(id, user.tenantId);
+    return this.roleService.remove(
+      id,
+      user.tenantId,
+      user.role?.name.toLowerCase() === 'master',
+    );
   }
 }

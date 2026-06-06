@@ -12,6 +12,8 @@ import {
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/guards/permissions.guard';
 import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import type { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import { CreatePermissionDto } from './dto/create-permission.dto';
 import { UpdatePermissionDto } from './dto/update-permission.dto';
 import { Permission } from './permission.entity';
@@ -24,8 +26,10 @@ export class PermissionController {
 
   @Get()
   @RequirePermissions('permissions.read')
-  findAll(): Promise<Permission[]> {
-    return this.permissionService.findAll();
+  findAll(@CurrentUser() user: AuthenticatedUser): Promise<Permission[]> {
+    return this.permissionService.findAll({
+      includeTenantPermissions: user.role?.name.toLowerCase() === 'master',
+    });
   }
 
   @Get(':id')

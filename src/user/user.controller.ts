@@ -69,7 +69,9 @@ export class UserController {
     @Body() createUserDto: CreateUserDto,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<UserResponse> {
-    return this.userService.create(createUserDto, user.tenantId);
+    return this.userService.create(createUserDto, user.tenantId, {
+      allowMasterRole: this.isMaster(user),
+    });
   }
 
   @Patch(':id')
@@ -95,7 +97,9 @@ export class UserController {
       delete updateUserDto.email;
     }
 
-    return this.userService.update(id, updateUserDto, user.tenantId);
+    return this.userService.update(id, updateUserDto, user.tenantId, {
+      allowMasterRole: this.isMaster(user),
+    });
   }
 
   @Post(':id/photo')

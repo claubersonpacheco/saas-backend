@@ -29,11 +29,6 @@ export class UpdateUserDto {
 
   @IsOptional()
   @IsString()
-  @Length(11, 18)
-  cpfCnpj?: string;
-
-  @IsOptional()
-  @IsString()
   @Length(1, 1)
   suspended?: string;
 

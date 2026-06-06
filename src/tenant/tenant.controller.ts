@@ -37,7 +37,7 @@ export class TenantController {
   @Post()
   @RequirePermissions('tenants.create')
   create(@Body() dto: CreateTenantDto): Promise<Tenant> {
-    return this.tenantService.create(dto);
+    return this.tenantService.createWithAdmin(dto);
   }
 
   @Patch(':id')

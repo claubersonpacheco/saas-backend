@@ -1,14 +1,35 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import * as bcrypt from 'bcrypt';
+import { In, Repository } from 'typeorm';
+import { Permission } from '../permission/permission.entity';
 import { Plan } from '../plan/plan.entity';
+import { Role } from '../role/role.entity';
+import { User } from '../user/user.entity';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
 import { Tenant } from './tenant.entity';
+
+const TENANT_ADMIN_PERMISSIONS = [
+  'users.read',
+  'users.create',
+  'users.update',
+  'users.delete',
+  'roles.read',
+  'roles.create',
+  'roles.update',
+  'roles.delete',
+  'permissions.read',
+  'settings.read',
+  'settings.create',
+  'settings.update',
+  'settings.delete',
+];
 
 @Injectable()
 export class TenantService {
@@ -17,6 +38,12 @@ export class TenantService {
     private readonly tenantRepository: Repository<Tenant>,
     @InjectRepository(Plan)
     private readonly planRepository: Repository<Plan>,
+    @InjectRepository(Role)
+    private readonly roleRepository: Repository<Role>,
+    @InjectRepository(Permission)
+    private readonly permissionRepository: Repository<Permission>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
   ) {}
 
   normalizeSlug(value: string): string {
@@ -72,6 +99,73 @@ export class TenantService {
     return plan;
   }
 
+  private async createAdminRole(tenantId: number): Promise<Role> {
+    const existing = await this.roleRepository.findOneBy({
+      tenantId,
+      name: 'admin',
+    });
+
+    if (existing) {
+      return existing;
+    }
+
+    const permissions = await this.permissionRepository.findBy({
+      name: In(TENANT_ADMIN_PERMISSIONS),
+    });
+    const role = this.roleRepository.create({
+      tenantId,
+      name: 'admin',
+      description: 'Tenant administrator',
+      permissions,
+    });
+
+    return this.roleRepository.save(role);
+  }
+
+  private validateAdminPayload(dto: CreateTenantDto): asserts dto is CreateTenantDto & {
+    adminUsername: string;
+    adminName: string;
+    adminEmail: string;
+    adminPassword: string;
+  } {
+    if (
+      !dto.adminUsername?.trim() ||
+      !dto.adminName?.trim() ||
+      !dto.adminEmail?.trim() ||
+      !dto.adminPassword
+    ) {
+      throw new BadRequestException(
+        'Informe adminUsername, adminName, adminEmail e adminPassword para criar a empresa.',
+      );
+    }
+  }
+
+  private async createTenantAdmin(
+    tenant: Tenant,
+    adminRole: Role,
+    dto: CreateTenantDto & {
+      adminUsername: string;
+      adminName: string;
+      adminEmail: string;
+      adminPassword: string;
+    },
+  ): Promise<User> {
+    const user = this.userRepository.create({
+      tenant,
+      tenantId: tenant.id,
+      username: dto.adminUsername.trim(),
+      name: dto.adminName.trim(),
+      lastname: dto.adminLastname?.trim() || null,
+      email: dto.adminEmail.trim().toLowerCase(),
+      suspended: '0',
+      photoUrl: null,
+      password: await bcrypt.hash(dto.adminPassword, 10),
+      role: adminRole,
+    });
+
+    return this.userRepository.save(user);
+  }
+
   async create(dto: CreateTenantDto): Promise<Tenant> {
     const name = dto.name.trim();
     const slug = this.normalizeSlug(dto.slug || name);
@@ -95,7 +189,21 @@ export class TenantService {
       planId: plan?.id ?? null,
     });
 
-    return this.tenantRepository.save(tenant);
+    const createdTenant = await this.tenantRepository.save(tenant);
+    await this.createAdminRole(createdTenant.id);
+
+    return createdTenant;
+  }
+
+  async createWithAdmin(dto: CreateTenantDto): Promise<Tenant> {
+    this.validateAdminPayload(dto);
+
+    const tenant = await this.create(dto);
+    const adminRole = await this.createAdminRole(tenant.id);
+
+    await this.createTenantAdmin(tenant, adminRole, dto);
+
+    return tenant;
   }
 
   async update(id: number, dto: UpdateTenantDto): Promise<Tenant> {

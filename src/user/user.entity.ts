@@ -40,9 +40,6 @@ export class User {
   @Column({ length: 150 })
   email: string;
 
-  @Column({ name: 'cpf_cnpj', type: 'varchar', length: 14, nullable: true })
-  cpfCnpj: string | null;
-
   @Column({ length: 1, default: '0' })
   suspended: string;
 

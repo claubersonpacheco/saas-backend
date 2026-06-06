@@ -84,7 +84,6 @@ async function seedAdminMaster(): Promise<void> {
       name: 'Admin',
       lastname: 'Master',
       email: adminEmail,
-      cpfCnpj: null,
       suspended: '0',
       photoUrl: null,
       password: await bcrypt.hash(adminPassword, 10),

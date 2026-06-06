@@ -61,7 +61,6 @@ export class CreateSaasCoreSchema1781900000000 implements MigrationInterface {
         "name" character varying(100) NOT NULL,
         "lastname" character varying(100),
         "email" character varying(150) NOT NULL,
-        "cpf_cnpj" character varying(14),
         "suspended" character varying(1) NOT NULL DEFAULT '0',
         "photo_url" character varying(512),
         "role_id" integer,

@@ -1,0 +1,102 @@
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  UploadedFile,
+  UseInterceptors,
+  UseGuards,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../auth/guards/permissions.guard';
+import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
+import type { AuthenticatedUser } from '../auth/types/authenticated-user.type';
+import { CreateSettingDto } from './dto/create-setting.dto';
+import { UpdateSettingDto } from './dto/update-setting.dto';
+import { Setting } from './setting.entity';
+import { SettingService } from './setting.service';
+
+type UploadedImageFile = {
+  buffer: Buffer;
+  mimetype: string;
+  originalname: string;
+  size: number;
+};
+
+@Controller('settings')
+@UseGuards(JwtAuthGuard, PermissionsGuard)
+export class SettingController {
+  constructor(private readonly settingService: SettingService) {}
+
+  @Get()
+  @RequirePermissions('settings.read')
+  findAll(@CurrentUser() user: AuthenticatedUser): Promise<Setting[]> {
+    return this.settingService.findAll(user.tenantId);
+  }
+
+  @Get(':id')
+  @RequirePermissions('settings.read')
+  findOne(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<Setting> {
+    return this.settingService.findOne(id, user.tenantId);
+  }
+
+  @Post()
+  @RequirePermissions('settings.create')
+  create(
+    @Body() createSettingDto: CreateSettingDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<Setting> {
+    return this.settingService.create(createSettingDto, user.tenantId);
+  }
+
+  @Patch(':id')
+  @RequirePermissions('settings.update')
+  update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateSettingDto: UpdateSettingDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<Setting> {
+    return this.settingService.update(id, updateSettingDto, user.tenantId);
+  }
+
+  @Post(':id/logo')
+  @RequirePermissions('settings.update')
+  @UseInterceptors(FileInterceptor('logo'))
+  uploadLogo(
+    @Param('id', ParseIntPipe) id: number,
+    @UploadedFile() file: UploadedImageFile,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<Setting> {
+    return this.settingService.uploadLogo(id, user.tenantId, file);
+  }
+
+  @Post(':id/logos/:type')
+  @RequirePermissions('settings.update')
+  @UseInterceptors(FileInterceptor('logo'))
+  uploadLogoVariant(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('type') type: string,
+    @UploadedFile() file: UploadedImageFile,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<Setting> {
+    return this.settingService.uploadLogo(id, user.tenantId, file, type);
+  }
+
+  @Delete(':id')
+  @RequirePermissions('settings.delete')
+  remove(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<{ message: string }> {
+    return this.settingService.remove(id, user.tenantId);
+  }
+}

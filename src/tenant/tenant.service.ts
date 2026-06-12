@@ -15,6 +15,11 @@ import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
 import { Tenant } from './tenant.entity';
 
+type TenantAdminResponse = Pick<
+  User,
+  'id' | 'tenantId' | 'username' | 'name' | 'lastname' | 'email' | 'suspended'
+>;
+
 const TENANT_ADMIN_PERMISSIONS = [
   'users.read',
   'users.create',
@@ -29,7 +34,20 @@ const TENANT_ADMIN_PERMISSIONS = [
   'settings.create',
   'settings.update',
   'settings.delete',
+  'services.read',
+  'services.create',
+  'services.update',
+  'services.delete',
 ];
+
+const MODULE_PERMISSIONS: Record<string, string[]> = {
+  services: [
+    'services.read',
+    'services.create',
+    'services.update',
+    'services.delete',
+  ],
+};
 
 @Injectable()
 export class TenantService {
@@ -55,8 +73,15 @@ export class TenantService {
       .toLowerCase();
   }
 
+  private normalizeModule(value: string): string {
+    return this.normalizeSlug(value);
+  }
+
   findAll(): Promise<Tenant[]> {
-    return this.tenantRepository.find({ order: { id: 'ASC' } });
+    return this.tenantRepository.find({
+      relations: { plan: true },
+      order: { id: 'ASC' },
+    });
   }
 
   async findOne(id: number): Promise<Tenant> {
@@ -120,6 +145,100 @@ export class TenantService {
     });
 
     return this.roleRepository.save(role);
+  }
+
+  private async syncAdminModulePermissions(
+    tenantId: number,
+    plan: Plan | null,
+  ): Promise<void> {
+    const modules = new Set(
+      (plan?.modules ?? []).map((module) => this.normalizeModule(module)),
+    );
+    const permissionNames = Object.entries(MODULE_PERMISSIONS)
+      .filter(([module]) => modules.has(module))
+      .flatMap(([, permissions]) => permissions);
+
+    if (!permissionNames.length) {
+      return;
+    }
+
+    const adminRole = await this.roleRepository.findOne({
+      where: { tenantId, name: 'admin' },
+      relations: { permissions: true },
+    });
+
+    if (!adminRole) {
+      return;
+    }
+
+    const permissions = await this.permissionRepository.findBy({
+      name: In(permissionNames),
+    });
+    const existingIds = new Set(
+      adminRole.permissions?.map((permission) => permission.id) ?? [],
+    );
+    const permissionsToAdd = permissions.filter(
+      (permission) => !existingIds.has(permission.id),
+    );
+
+    if (!permissionsToAdd.length) {
+      return;
+    }
+
+    await this.roleRepository
+      .createQueryBuilder()
+      .relation(Role, 'permissions')
+      .of(adminRole)
+      .add(permissionsToAdd);
+  }
+
+  private sanitizeAdmin(user: User): TenantAdminResponse {
+    return {
+      id: user.id,
+      tenantId: user.tenantId,
+      username: user.username,
+      name: user.name,
+      lastname: user.lastname,
+      email: user.email,
+      suspended: user.suspended,
+    };
+  }
+
+  async findAdminUser(tenantId: number): Promise<TenantAdminResponse | null> {
+    await this.findOne(tenantId);
+
+    const user = await this.userRepository
+      .createQueryBuilder('user')
+      .leftJoinAndSelect('user.role', 'role')
+      .where('user.tenant_id = :tenantId', { tenantId })
+      .andWhere('LOWER(role.name) = :roleName', { roleName: 'admin' })
+      .orderBy('user.id', 'ASC')
+      .getOne();
+
+    return user ? this.sanitizeAdmin(user) : null;
+  }
+
+  async updateAdminPassword(
+    tenantId: number,
+    password: string,
+  ): Promise<{ message: string }> {
+    const admin = await this.userRepository
+      .createQueryBuilder('user')
+      .leftJoinAndSelect('user.role', 'role')
+      .where('user.tenant_id = :tenantId', { tenantId })
+      .andWhere('LOWER(role.name) = :roleName', { roleName: 'admin' })
+      .orderBy('user.id', 'ASC')
+      .getOne();
+
+    if (!admin) {
+      throw new NotFoundException(`Admin user for tenant ${tenantId} not found.`);
+    }
+
+    await this.userRepository.update(admin.id, {
+      password: await bcrypt.hash(password, 10),
+    });
+
+    return { message: 'Admin password updated successfully.' };
   }
 
   private validateAdminPayload(dto: CreateTenantDto): asserts dto is CreateTenantDto & {
@@ -191,6 +310,7 @@ export class TenantService {
 
     const createdTenant = await this.tenantRepository.save(tenant);
     await this.createAdminRole(createdTenant.id);
+    await this.syncAdminModulePermissions(createdTenant.id, plan);
 
     return createdTenant;
   }
@@ -229,7 +349,13 @@ export class TenantService {
       ...(dto.planId !== undefined ? { plan, planId: plan?.id ?? null } : {}),
     });
 
-    return this.tenantRepository.save(updated);
+    const savedTenant = await this.tenantRepository.save(updated);
+
+    if (dto.planId !== undefined) {
+      await this.syncAdminModulePermissions(savedTenant.id, plan ?? null);
+    }
+
+    return this.findOne(savedTenant.id);
   }
 
   async remove(id: number): Promise<{ message: string }> {

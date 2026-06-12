@@ -31,7 +31,13 @@ export class PlanModulesGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<{
       user?: AuthenticatedUser;
     }>();
-    const modules = request.user?.tenantPlan?.modules ?? [];
+    const user = request.user;
+
+    if (user?.role?.name.toLowerCase() === 'master') {
+      return true;
+    }
+
+    const modules = user?.tenantPlan?.modules ?? [];
     const tenantModules = new Set(
       modules.map((module) => this.normalizeModule(module)),
     );

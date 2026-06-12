@@ -45,6 +45,10 @@ const TENANT_ADMIN_PERMISSIONS = [
   'settings.create',
   'settings.update',
   'settings.delete',
+  'services.read',
+  'services.create',
+  'services.update',
+  'services.delete',
 ];
 
 @Injectable()

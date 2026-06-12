@@ -14,6 +14,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/guards/permissions.guard';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
+import { UpdateTenantAdminPasswordDto } from './dto/update-tenant-admin-password.dto';
 import { Tenant } from './tenant.entity';
 import { TenantService } from './tenant.service';
 
@@ -26,6 +27,21 @@ export class TenantController {
   @RequirePermissions('tenants.read')
   findAll(): Promise<Tenant[]> {
     return this.tenantService.findAll();
+  }
+
+  @Get(':id/admin')
+  @RequirePermissions('tenants.read')
+  findAdmin(@Param('id', ParseIntPipe) id: number) {
+    return this.tenantService.findAdminUser(id);
+  }
+
+  @Patch(':id/admin/password')
+  @RequirePermissions('tenants.update')
+  updateAdminPassword(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateTenantAdminPasswordDto,
+  ): Promise<{ message: string }> {
+    return this.tenantService.updateAdminPassword(id, dto.password);
   }
 
   @Get(':id')

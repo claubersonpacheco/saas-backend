@@ -39,6 +39,14 @@ export class PlanService {
       .sort();
   }
 
+  private normalizeString(value?: string): string | null {
+    return value?.trim() || null;
+  }
+
+  private normalizeDecimal(value?: string | number): string {
+    return value === undefined || value === '' ? '0' : String(value);
+  }
+
   findAll(projectType?: string): Promise<Plan[]> {
     return this.planRepository.find({
       where: projectType
@@ -79,12 +87,26 @@ export class PlanService {
     }
 
     const plan = this.planRepository.create({
+      code: this.normalizeString(dto.code),
+      publicId: this.normalizeString(dto.publicId),
       name,
       slug,
       projectType,
       description: dto.description?.trim() || null,
+      price: this.normalizeDecimal(dto.price),
+      currency: dto.currency?.trim().toUpperCase() || 'EUR',
+      billingPeriod: dto.billingPeriod || 'monthly',
+      trialDays: dto.trialDays ?? 0,
+      maxUsers: dto.maxUsers ?? null,
+      maxProjects: dto.maxProjects ?? null,
+      maxStorageMb: dto.maxStorageMb ?? null,
+      features: dto.features ?? null,
       modules: this.normalizeModules(dto.modules),
+      highlighted: dto.highlighted ?? false,
       active: dto.active ?? true,
+      isPublic: dto.isPublic ?? true,
+      sortOrder: dto.sortOrder ?? 0,
+      taxPercentage: this.normalizeDecimal(dto.taxPercentage),
     });
 
     return this.planRepository.save(plan);
@@ -117,16 +139,36 @@ export class PlanService {
     }
 
     const updated = this.planRepository.merge(plan, {
+      ...(dto.code !== undefined ? { code: this.normalizeString(dto.code) } : {}),
+      ...(dto.publicId !== undefined ? { publicId: this.normalizeString(dto.publicId) } : {}),
       ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
       ...(dto.slug !== undefined ? { slug: nextSlug } : {}),
       ...(dto.projectType !== undefined ? { projectType: nextProjectType } : {}),
       ...(dto.description !== undefined
         ? { description: dto.description?.trim() || null }
         : {}),
+      ...(dto.price !== undefined ? { price: this.normalizeDecimal(dto.price) } : {}),
+      ...(dto.currency !== undefined
+        ? { currency: dto.currency.trim().toUpperCase() || 'EUR' }
+        : {}),
+      ...(dto.billingPeriod !== undefined ? { billingPeriod: dto.billingPeriod } : {}),
+      ...(dto.trialDays !== undefined ? { trialDays: dto.trialDays } : {}),
+      ...(dto.maxUsers !== undefined ? { maxUsers: dto.maxUsers ?? null } : {}),
+      ...(dto.maxProjects !== undefined ? { maxProjects: dto.maxProjects ?? null } : {}),
+      ...(dto.maxStorageMb !== undefined
+        ? { maxStorageMb: dto.maxStorageMb ?? null }
+        : {}),
+      ...(dto.features !== undefined ? { features: dto.features } : {}),
       ...(dto.modules !== undefined
         ? { modules: this.normalizeModules(dto.modules) }
         : {}),
+      ...(dto.highlighted !== undefined ? { highlighted: dto.highlighted } : {}),
       ...(dto.active !== undefined ? { active: dto.active } : {}),
+      ...(dto.isPublic !== undefined ? { isPublic: dto.isPublic } : {}),
+      ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
+      ...(dto.taxPercentage !== undefined
+        ? { taxPercentage: this.normalizeDecimal(dto.taxPercentage) }
+        : {}),
     });
 
     return this.planRepository.save(updated);

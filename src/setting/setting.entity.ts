@@ -27,6 +27,9 @@ export class Setting {
   @Column({ type: 'varchar', length: 255, nullable: true })
   name: string | null;
 
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  prefix: string | null;
+
   @Column({ type: 'varchar', length: 512, nullable: true })
   logo: string | null;
 

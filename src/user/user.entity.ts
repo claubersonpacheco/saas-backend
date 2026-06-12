@@ -5,10 +5,12 @@ import {
   Index,
   JoinColumn,
   ManyToOne,
+  OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
 import { Role } from '../role/role.entity';
+import { Service } from '../service/service.entity';
 import { Tenant } from '../tenant/tenant.entity';
 
 @Entity('users')
@@ -55,6 +57,9 @@ export class User {
 
   @Column({ length: 255, select: false })
   password: string;
+
+  @OneToMany(() => Service, (service) => service.user)
+  services: Service[];
 
   @Column({ name: 'reset_password_token', type: 'varchar', length: 255, nullable: true })
   resetPasswordToken: string | null;

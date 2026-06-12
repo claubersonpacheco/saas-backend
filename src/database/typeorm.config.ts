@@ -2,9 +2,26 @@ import { config as loadEnv } from 'dotenv';
 import { join } from 'path';
 import type { PostgresConnectionOptions } from 'typeorm/driver/postgres/PostgresConnectionOptions';
 
+import {
+  Budget,
+  BudgetFilter,
+  BudgetItem,
+  BudgetStatus,
+  BudgetTotal,
+  Category,
+  Customer,
+  Email,
+  Entry,
+  Expense,
+  Freelancer,
+  Invoice,
+  Product,
+  Supplier,
+} from '../budget/entities';
 import { Permission } from '../permission/permission.entity';
 import { Plan } from '../plan/plan.entity';
 import { Role } from '../role/role.entity';
+import { Service } from '../service/service.entity';
 import { Setting } from '../setting/setting.entity';
 import { Tenant } from '../tenant/tenant.entity';
 import { User } from '../user/user.entity';
@@ -27,7 +44,29 @@ export const typeOrmConfig: PostgresConnectionOptions = {
   password: process.env.DB_PASSWORD ?? '123456',
   database: process.env.DB_DATABASE ?? 'app-saas',
 
-  entities: [Tenant, User, Setting, Role, Permission, Plan],
+  entities: [
+    Tenant,
+    User,
+    Setting,
+    Role,
+    Permission,
+    Plan,
+    Service,
+    Category,
+    Product,
+    Customer,
+    Budget,
+    BudgetItem,
+    Freelancer,
+    Supplier,
+    BudgetStatus,
+    Invoice,
+    Email,
+    Expense,
+    Entry,
+    BudgetTotal,
+    BudgetFilter,
+  ],
 
   migrations: [join(__dirname, 'migrations', '*{.ts,.js}')],
 

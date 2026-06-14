@@ -19,7 +19,7 @@ import type { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import { CreateServiceDto } from './dto/create-service.dto';
 import { UpdateServiceDto } from './dto/update-service.dto';
 import { Service } from './service.entity';
-import { ServiceService } from './service.service';
+import { ServiceService, type ServiceUserOption } from './service.service';
 
 @Controller('services')
 @UseGuards(JwtAuthGuard, PlanModulesGuard, PermissionsGuard)
@@ -27,10 +27,26 @@ import { ServiceService } from './service.service';
 export class ServiceController {
   constructor(private readonly serviceService: ServiceService) {}
 
+  private serviceScope(user: AuthenticatedUser) {
+    const roleName = user.role?.name.toLowerCase();
+
+    return {
+      tenantId: user.tenantId,
+      userId: user.sub,
+      canSeeAll: roleName === 'admin' || roleName === 'master',
+    };
+  }
+
   @Get()
   @RequirePermissions('services.read')
   findAll(@CurrentUser() user: AuthenticatedUser): Promise<Service[]> {
-    return this.serviceService.findAll(user.tenantId);
+    return this.serviceService.findAll(this.serviceScope(user));
+  }
+
+  @Get('users/options')
+  @RequirePermissions('services.create', 'services.update')
+  findUserOptions(@CurrentUser() user: AuthenticatedUser): Promise<ServiceUserOption[]> {
+    return this.serviceService.findTenantUsers(this.serviceScope(user));
   }
 
   @Get(':id')
@@ -39,7 +55,7 @@ export class ServiceController {
     @Param('id', ParseIntPipe) id: number,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<Service> {
-    return this.serviceService.findOne(id, user.tenantId);
+    return this.serviceService.findOne(id, this.serviceScope(user));
   }
 
   @Post()
@@ -48,7 +64,7 @@ export class ServiceController {
     @Body() dto: CreateServiceDto,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<Service> {
-    return this.serviceService.create(dto, user.sub, user.tenantId);
+    return this.serviceService.create(dto, this.serviceScope(user));
   }
 
   @Patch(':id')
@@ -58,7 +74,7 @@ export class ServiceController {
     @Body() dto: UpdateServiceDto,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<Service> {
-    return this.serviceService.update(id, dto, user.tenantId);
+    return this.serviceService.update(id, dto, this.serviceScope(user));
   }
 
   @Delete(':id')
@@ -67,6 +83,6 @@ export class ServiceController {
     @Param('id', ParseIntPipe) id: number,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<{ message: string }> {
-    return this.serviceService.remove(id, user.tenantId);
+    return this.serviceService.remove(id, this.serviceScope(user));
   }
 }

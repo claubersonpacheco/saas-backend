@@ -10,6 +10,11 @@ import {
 
 export class UpdateServiceDto {
   @IsOptional()
+  @IsInt()
+  @Min(1)
+  userId?: number;
+
+  @IsOptional()
   @IsString()
   @Length(1, 255)
   code?: string;

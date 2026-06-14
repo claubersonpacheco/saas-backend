@@ -9,6 +9,10 @@ import {
 } from 'class-validator';
 
 export class CreateServiceDto {
+  @IsInt()
+  @Min(1)
+  userId: number;
+
   @IsString()
   @Length(1, 255)
   code: string;

@@ -1,10 +1,26 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from '../user/user.entity';
 import { CreateServiceDto } from './dto/create-service.dto';
 import { UpdateServiceDto } from './dto/update-service.dto';
 import { Service } from './service.entity';
+
+export type ServiceUserOption = Pick<
+  User,
+  'id' | 'username' | 'name' | 'lastname' | 'email'
+>;
+
+type ServiceAccessScope = {
+  tenantId: number;
+  userId: number;
+  canSeeAll: boolean;
+};
 
 @Injectable()
 export class ServiceService {
@@ -15,22 +31,31 @@ export class ServiceService {
     private readonly userRepository: Repository<User>,
   ) {}
 
-  findAll(tenantId: number): Promise<Service[]> {
-    return this.serviceRepository
+  findAll(scope: ServiceAccessScope): Promise<Service[]> {
+    const query = this.serviceRepository
       .createQueryBuilder('service')
       .innerJoinAndSelect('service.user', 'user')
-      .where('user.tenant_id = :tenantId', { tenantId })
-      .orderBy('service.id', 'ASC')
-      .getMany();
+      .where('user.tenant_id = :tenantId', { tenantId: scope.tenantId });
+
+    if (!scope.canSeeAll) {
+      query.andWhere('service.user_id = :userId', { userId: scope.userId });
+    }
+
+    return query.orderBy('service.id', 'ASC').getMany();
   }
 
-  async findOne(id: number, tenantId: number): Promise<Service> {
-    const service = await this.serviceRepository
+  async findOne(id: number, scope: ServiceAccessScope): Promise<Service> {
+    const query = this.serviceRepository
       .createQueryBuilder('service')
       .innerJoinAndSelect('service.user', 'user')
       .where('service.id = :id', { id })
-      .andWhere('user.tenant_id = :tenantId', { tenantId })
-      .getOne();
+      .andWhere('user.tenant_id = :tenantId', { tenantId: scope.tenantId });
+
+    if (!scope.canSeeAll) {
+      query.andWhere('service.user_id = :userId', { userId: scope.userId });
+    }
+
+    const service = await query.getOne();
 
     if (!service) {
       throw new NotFoundException(`Service with id ${id} not found.`);
@@ -39,14 +64,30 @@ export class ServiceService {
     return service;
   }
 
-  async create(dto: CreateServiceDto, userId: number, tenantId: number): Promise<Service> {
-    const user = await this.userRepository.findOneBy({ id: userId, tenantId });
+  findTenantUsers(scope: ServiceAccessScope): Promise<ServiceUserOption[]> {
+    return this.userRepository.find({
+      select: {
+        id: true,
+        username: true,
+        name: true,
+        lastname: true,
+        email: true,
+      },
+      where: scope.canSeeAll
+        ? { tenantId: scope.tenantId }
+        : { id: scope.userId, tenantId: scope.tenantId },
+      order: {
+        name: 'ASC',
+        username: 'ASC',
+      },
+    });
+  }
 
-    if (!user) {
-      throw new NotFoundException(`User with id ${userId} not found.`);
-    }
+  async create(dto: CreateServiceDto, scope: ServiceAccessScope): Promise<Service> {
+    this.ensureAssignableUser(dto.userId, scope);
+    const user = await this.findTenantUser(dto.userId, scope.tenantId);
 
-    await this.ensureCodeAvailable(dto.code, tenantId);
+    await this.ensureCodeAvailable(dto.code, scope.tenantId);
 
     const service = this.serviceRepository.create({
       ...this.normalizePayload(dto),
@@ -57,20 +98,27 @@ export class ServiceService {
     return this.serviceRepository.save(service);
   }
 
-  async update(id: number, dto: UpdateServiceDto, tenantId: number): Promise<Service> {
-    const service = await this.findOne(id, tenantId);
+  async update(id: number, dto: UpdateServiceDto, scope: ServiceAccessScope): Promise<Service> {
+    const service = await this.findOne(id, scope);
 
     if (dto.code !== undefined) {
-      await this.ensureCodeAvailable(dto.code, tenantId, id);
+      await this.ensureCodeAvailable(dto.code, scope.tenantId, id);
     }
 
     const updated = this.serviceRepository.merge(service, this.normalizePayload(dto));
 
+    if (dto.userId !== undefined) {
+      this.ensureAssignableUser(dto.userId, scope);
+      const user = await this.findTenantUser(dto.userId, scope.tenantId);
+      updated.user = user;
+      updated.userId = user.id;
+    }
+
     return this.serviceRepository.save(updated);
   }
 
-  async remove(id: number, tenantId: number): Promise<{ message: string }> {
-    const service = await this.findOne(id, tenantId);
+  async remove(id: number, scope: ServiceAccessScope): Promise<{ message: string }> {
+    const service = await this.findOne(id, scope);
 
     await this.serviceRepository.remove(service);
 
@@ -94,6 +142,22 @@ export class ServiceService {
       ...(dto.hourStart !== undefined ? { hourStart: dto.hourStart || null } : {}),
       ...(dto.hourEnd !== undefined ? { hourEnd: dto.hourEnd || null } : {}),
     };
+  }
+
+  private async findTenantUser(userId: number, tenantId: number): Promise<User> {
+    const user = await this.userRepository.findOneBy({ id: userId, tenantId });
+
+    if (!user) {
+      throw new NotFoundException(`User with id ${userId} not found.`);
+    }
+
+    return user;
+  }
+
+  private ensureAssignableUser(userId: number, scope: ServiceAccessScope): void {
+    if (!scope.canSeeAll && userId !== scope.userId) {
+      throw new ForbiddenException('User cannot assign services to another user.');
+    }
   }
 
   private async ensureCodeAvailable(

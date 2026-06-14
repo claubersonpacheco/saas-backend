@@ -18,6 +18,7 @@ import {
   Product,
   Supplier,
 } from '../budget/entities';
+import { GlobalSetting } from '../global-setting/global-setting.entity';
 import { Permission } from '../permission/permission.entity';
 import { Plan } from '../plan/plan.entity';
 import { Role } from '../role/role.entity';
@@ -46,6 +47,7 @@ export const typeOrmConfig: PostgresConnectionOptions = {
 
   entities: [
     Tenant,
+    GlobalSetting,
     User,
     Setting,
     Role,

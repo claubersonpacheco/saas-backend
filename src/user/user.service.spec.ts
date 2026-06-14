@@ -3,7 +3,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Permission } from '../permission/permission.entity';
 import { Role } from '../role/role.entity';
-import { Setting } from '../setting/setting.entity';
+import { BunnyStorageService } from '../storage/bunny-storage.service';
 import { Tenant } from '../tenant/tenant.entity';
 import { TenantService } from '../tenant/tenant.service';
 import { User } from './user.entity';
@@ -47,16 +47,16 @@ describe('UserService', () => {
           useValue: {},
         },
         {
-          provide: getRepositoryToken(Setting),
-          useValue: {},
-        },
-        {
           provide: getRepositoryToken(Tenant),
           useValue: {},
         },
         {
           provide: TenantService,
           useValue: tenantService,
+        },
+        {
+          provide: BunnyStorageService,
+          useValue: {},
         },
       ],
     }).compile();

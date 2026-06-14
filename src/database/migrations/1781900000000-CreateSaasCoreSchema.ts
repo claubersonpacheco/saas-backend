@@ -4,16 +4,20 @@ export class CreateSaasCoreSchema1781900000000 implements MigrationInterface {
   name = 'CreateSaasCoreSchema1781900000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query('CREATE EXTENSION IF NOT EXISTS "pgcrypto"');
+
     await queryRunner.query(`
       CREATE TABLE "tenants" (
         "id" SERIAL NOT NULL,
         "name" character varying(150) NOT NULL,
         "slug" character varying(120) NOT NULL,
+        "code" uuid NOT NULL DEFAULT gen_random_uuid(),
         "active" boolean NOT NULL DEFAULT true,
         "created_at" TIMESTAMP NOT NULL DEFAULT now(),
         "updated_at" TIMESTAMP NOT NULL DEFAULT now(),
         CONSTRAINT "PK_tenants" PRIMARY KEY ("id"),
-        CONSTRAINT "UQ_tenants_slug" UNIQUE ("slug")
+        CONSTRAINT "UQ_tenants_slug" UNIQUE ("slug"),
+        CONSTRAINT "UQ_tenants_code" UNIQUE ("code")
       )
     `);
 
@@ -86,12 +90,6 @@ export class CreateSaasCoreSchema1781900000000 implements MigrationInterface {
         "logoIcon" character varying(512),
         "logoPrint" character varying(512),
         "logoWhite" character varying(512),
-        "bunnyStorageZoneName" character varying(255),
-        "bunnyStorageAccessKey" character varying(255),
-        "bunnyStorageCdnDomain" character varying(512),
-        "bunnyStorageBaseUrl" character varying(512),
-        "bunnyStorageUserFolder" character varying(255),
-        "bunnyStorageLogoFolder" character varying(255),
         "created_at" TIMESTAMP NOT NULL DEFAULT now(),
         "updated_at" TIMESTAMP NOT NULL DEFAULT now(),
         CONSTRAINT "PK_settings" PRIMARY KEY ("id"),

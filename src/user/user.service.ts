@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -10,7 +11,7 @@ import * as bcrypt from 'bcrypt';
 import { In, QueryFailedError, Repository } from 'typeorm';
 import { Permission } from '../permission/permission.entity';
 import { Role } from '../role/role.entity';
-import { Setting } from '../setting/setting.entity';
+import { BunnyStorageService } from '../storage/bunny-storage.service';
 import { Tenant } from '../tenant/tenant.entity';
 import { TenantService } from '../tenant/tenant.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -53,6 +54,8 @@ const TENANT_ADMIN_PERMISSIONS = [
 
 @Injectable()
 export class UserService {
+  private readonly logger = new Logger(UserService.name);
+
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
@@ -60,11 +63,10 @@ export class UserService {
     private readonly roleRepository: Repository<Role>,
     @InjectRepository(Permission)
     private readonly permissionRepository: Repository<Permission>,
-    @InjectRepository(Setting)
-    private readonly settingRepository: Repository<Setting>,
     @InjectRepository(Tenant)
     private readonly tenantRepository: Repository<Tenant>,
     private readonly tenantService: TenantService,
+    private readonly bunnyStorageService: BunnyStorageService,
   ) {}
 
   private sanitizeUser(user: User): UserResponse {
@@ -122,14 +124,28 @@ export class UserService {
     return users.map((user) => this.sanitizeUser(user));
   }
 
-  async findOne(id: number, tenantId?: number): Promise<UserResponse> {
+  private userIdentifierWhere(identifier: string | number, tenantId?: number) {
+    const value = String(identifier);
+    const base = tenantId ? { tenantId } : {};
+
+    if (/^\d+$/.test(value)) {
+      return { ...base, id: Number(value) };
+    }
+
+    return { ...base, uuid: value };
+  }
+
+  async findOne(
+    identifier: string | number,
+    tenantId?: number,
+  ): Promise<UserResponse> {
     const user = await this.userRepository.findOne({
-      where: tenantId ? { id, tenantId } : { id },
+      where: this.userIdentifierWhere(identifier, tenantId),
       relations: { tenant: { plan: true } },
     });
 
     if (!user) {
-      throw new NotFoundException(`User with id ${id} not found.`);
+      throw new NotFoundException(`User ${identifier} not found.`);
     }
 
     return this.sanitizeUser(user);
@@ -307,18 +323,18 @@ export class UserService {
   }
 
   async update(
-    id: number,
+    id: string | number,
     updateUserDto: UpdateUserDto,
     tenantId: number,
     options: UserWriteOptions = {},
   ): Promise<UserResponse> {
     const user = await this.userRepository.findOne({
-      where: { id, tenantId },
+      where: this.userIdentifierWhere(id, tenantId),
       select: this.userPasswordSelect(),
     });
 
     if (!user) {
-      throw new NotFoundException(`User with id ${id} not found.`);
+      throw new NotFoundException(`User ${id} not found.`);
     }
 
     if (updateUserDto.email && updateUserDto.email !== user.email) {
@@ -328,7 +344,7 @@ export class UserService {
         email: normalizedEmail,
       });
 
-      if (existingUser && existingUser.id !== id) {
+      if (existingUser && existingUser.id !== user.id) {
         throw new ConflictException(
           'A user with this email already exists in this tenant.',
         );
@@ -344,7 +360,7 @@ export class UserService {
         username: normalizedUsername,
       });
 
-      if (existingUsername && existingUsername.id !== id) {
+      if (existingUsername && existingUsername.id !== user.id) {
         throw new ConflictException(
           'A user with this username already exists in this tenant.',
         );
@@ -388,6 +404,7 @@ export class UserService {
   private userPasswordSelect() {
     return {
       id: true,
+      uuid: true,
       tenantId: true,
       tenant: {
         id: true,
@@ -419,43 +436,6 @@ export class UserService {
     } as const;
   }
 
-  private async getBunnyStorageConfig(tenantId: number): Promise<{
-    zoneName: string;
-    accessKey: string;
-    publicBaseUrl: string;
-    userFolder: string;
-  }> {
-    const [setting] = await this.settingRepository.find({
-      where: { tenantId },
-      order: { id: 'DESC' },
-      take: 1,
-    });
-    const zoneName = setting?.bunnyStorageZoneName?.trim();
-    const accessKey = setting?.bunnyStorageAccessKey?.trim();
-    const publicBaseUrl = (
-      setting?.bunnyStorageCdnDomain ||
-      setting?.bunnyStorageBaseUrl ||
-      ''
-    )
-      .trim()
-      .replace(/\/+$/, '');
-
-    if (!zoneName || !accessKey || !publicBaseUrl) {
-      throw new BadRequestException(
-        'Configure bunnyStorageZoneName, bunnyStorageAccessKey e bunnyStorageCdnDomain/baseUrl antes de enviar fotos.',
-      );
-    }
-
-    return {
-      zoneName,
-      accessKey,
-      publicBaseUrl: /^https?:\/\//.test(publicBaseUrl)
-        ? publicBaseUrl
-        : `https://${publicBaseUrl}`,
-      userFolder: setting?.bunnyStorageUserFolder?.trim() || 'users',
-    };
-  }
-
   private getImageExtension(file: UploadedImageFile): string {
     const extensionByMime: Record<string, string> = {
       'image/jpeg': 'jpg',
@@ -477,14 +457,17 @@ export class UserService {
   }
 
   async uploadPhoto(
-    id: number,
+    id: string | number,
     tenantId: number,
     file?: UploadedImageFile,
   ): Promise<UserResponse> {
-    const user = await this.userRepository.findOneBy({ id, tenantId });
+    const user = await this.userRepository.findOne({
+      where: this.userIdentifierWhere(id, tenantId),
+      relations: { tenant: true },
+    });
 
     if (!user) {
-      throw new NotFoundException(`User with id ${id} not found.`);
+      throw new NotFoundException(`User ${id} not found.`);
     }
 
     if (!file) {
@@ -501,43 +484,76 @@ export class UserService {
       throw new BadRequestException('A foto deve ter no maximo 5MB.');
     }
 
-    const config = await this.getBunnyStorageConfig(tenantId);
+    const config = await this.bunnyStorageService.getConfig(tenantId);
     const fileName = `${user.id}-${Date.now()}-${this.sanitizePathSegment(
       user.username,
     )}.${extension}`;
-    const storagePath = `${config.userFolder.replace(/\/+$/, '')}/${fileName}`;
-    const uploadUrl = `https://storage.bunnycdn.com/${config.zoneName}/${storagePath}`;
-    const uploadBody = new ArrayBuffer(file.buffer.byteLength);
-    new Uint8Array(uploadBody).set(file.buffer);
-
-    const response = await fetch(uploadUrl, {
-      method: 'PUT',
-      headers: {
-        AccessKey: config.accessKey,
-        'Content-Type': file.mimetype,
-      },
-      body: uploadBody,
+    const storagePath = this.bunnyStorageService.buildStoragePath({
+      tenantId,
+      tenantFolder: user.tenant.code,
+      tenantIsCentral: user.tenant.planId === null,
+      folder: config.userFolder,
+      defaultFolder: 'users',
+      fileName,
     });
+    const photoUrl = await this.bunnyStorageService.upload(
+      storagePath,
+      file,
+      tenantId,
+    );
 
-    if (!response.ok) {
-      const body = await response.text().catch(() => '');
-      throw new BadRequestException(
-        `Nao foi possivel enviar a foto para Bunny Storage. ${body || response.statusText}`,
-      );
+    const previousPhotoUrl = user.photoUrl;
+    user.photoUrl = photoUrl;
+    await this.userRepository.save(user);
+
+    if (previousPhotoUrl && previousPhotoUrl !== photoUrl) {
+      await this.bunnyStorageService.deleteByUrl(previousPhotoUrl, tenantId);
     }
 
-    user.photoUrl = `${config.publicBaseUrl}/${storagePath}`;
-    return this.sanitizeUser(await this.userRepository.save(user));
+    return this.findOne(user.id, tenantId);
   }
 
-  async remove(id: number, tenantId: number): Promise<{ message: string }> {
+  async removePhoto(
+    id: string | number,
+    tenantId: number,
+  ): Promise<UserResponse> {
     const user = await this.userRepository.findOne({
-      where: { id, tenantId },
+      where: this.userIdentifierWhere(id, tenantId),
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User ${id} not found.`);
+    }
+
+    const previousPhotoUrl = user.photoUrl;
+    user.photoUrl = null;
+    await this.userRepository.save(user);
+
+    if (previousPhotoUrl) {
+      try {
+        await this.bunnyStorageService.deleteByUrl(previousPhotoUrl, tenantId);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(
+          `Nao foi possivel apagar a foto antiga do usuario ${id}: ${message}`,
+        );
+      }
+    }
+
+    return this.findOne(user.id, tenantId);
+  }
+
+  async remove(
+    id: string | number,
+    tenantId: number,
+  ): Promise<{ message: string }> {
+    const user = await this.userRepository.findOne({
+      where: this.userIdentifierWhere(id, tenantId),
       select: this.userPasswordSelect(),
     });
 
     if (!user) {
-      throw new NotFoundException(`User with id ${id} not found.`);
+      throw new NotFoundException(`User ${id} not found.`);
     }
 
     try {

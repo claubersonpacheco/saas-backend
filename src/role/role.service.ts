@@ -7,6 +7,10 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Permission } from '../permission/permission.entity';
+import {
+  filterPermissionsByPlanModules,
+  isPermissionAllowedByModules,
+} from '../permission/permission-plan.util';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { Role } from './role.entity';
@@ -33,7 +37,11 @@ export class RoleService {
     return roles.filter((role) => role.name.toLowerCase() !== 'master');
   }
 
-  async findOne(id: number, tenantId: number): Promise<Role> {
+  async findOne(
+    id: number,
+    tenantId: number,
+    planModules?: string[],
+  ): Promise<Role> {
     const role = await this.roleRepository.findOne({
       where: { id, tenantId },
       relations: {
@@ -42,6 +50,13 @@ export class RoleService {
     });
     if (!role) {
       throw new NotFoundException(`Role with id ${id} not found.`);
+    }
+
+    if (planModules) {
+      role.permissions = filterPermissionsByPlanModules(
+        role.permissions ?? [],
+        planModules,
+      );
     }
 
     return role;
@@ -74,6 +89,26 @@ export class RoleService {
     }
   }
 
+  private assertPlanPermissionsAllowed(
+    permissions: Permission[],
+    planModules: string[] | undefined,
+  ): void {
+    if (!planModules) {
+      return;
+    }
+
+    const forbiddenPermission = permissions.find(
+      (permission) =>
+        !isPermissionAllowedByModules(permission.name, planModules),
+    );
+
+    if (forbiddenPermission) {
+      throw new ForbiddenException(
+        `A permissao ${forbiddenPermission.name} nao faz parte dos modulos liberados para este plano.`,
+      );
+    }
+  }
+
   private async findPermissions(permissionIds?: number[]): Promise<Permission[]> {
     if (!permissionIds) {
       return [];
@@ -94,6 +129,7 @@ export class RoleService {
     role: Role,
     permissionIds: number[] | undefined,
     allowGlobalPermissions: boolean,
+    planModules?: string[],
   ): Promise<void> {
     if (permissionIds === undefined) {
       return;
@@ -101,6 +137,7 @@ export class RoleService {
 
     const permissions = await this.findPermissions(permissionIds);
     this.assertGlobalPermissionsAllowed(permissions, allowGlobalPermissions);
+    this.assertPlanPermissionsAllowed(permissions, planModules);
 
     const currentPermissionIds = role.permissions?.map((permission) => permission.id) ?? [];
     const nextPermissionIds = permissions.map((permission) => permission.id);
@@ -128,6 +165,7 @@ export class RoleService {
     tenantId: number,
     allowMaster = false,
     allowGlobalPermissions = false,
+    planModules?: string[],
   ): Promise<Role> {
     const name = dto.name.trim();
     this.assertMasterRoleAllowed(name, allowMaster);
@@ -149,9 +187,10 @@ export class RoleService {
       createdRole,
       dto.permissionIds,
       allowGlobalPermissions,
+      planModules,
     );
 
-    return this.findOne(createdRole.id, tenantId);
+    return this.findOne(createdRole.id, tenantId, planModules);
   }
 
   async update(
@@ -160,6 +199,7 @@ export class RoleService {
     tenantId: number,
     allowMaster = false,
     allowGlobalPermissions = false,
+    planModules?: string[],
   ): Promise<Role> {
     const role = await this.findOne(id, tenantId);
     this.assertMasterRoleAllowed(role.name, allowMaster);
@@ -183,9 +223,14 @@ export class RoleService {
     });
 
     const savedRole = await this.roleRepository.save(updated);
-    await this.syncPermissions(role, dto.permissionIds, allowGlobalPermissions);
+    await this.syncPermissions(
+      role,
+      dto.permissionIds,
+      allowGlobalPermissions,
+      planModules,
+    );
 
-    return this.findOne(savedRole.id, tenantId);
+    return this.findOne(savedRole.id, tenantId, planModules);
   }
 
   async remove(

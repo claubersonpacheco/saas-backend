@@ -8,6 +8,10 @@ import { Repository } from 'typeorm';
 import { CreatePermissionDto } from './dto/create-permission.dto';
 import { UpdatePermissionDto } from './dto/update-permission.dto';
 import { Permission } from './permission.entity';
+import {
+  filterPermissionsByPlanModules,
+  isGlobalPermission,
+} from './permission-plan.util';
 
 @Injectable()
 export class PermissionService {
@@ -16,7 +20,12 @@ export class PermissionService {
     private readonly permissionRepository: Repository<Permission>,
   ) {}
 
-  async findAll(options: { includeTenantPermissions?: boolean } = {}): Promise<Permission[]> {
+  async findAll(
+    options: {
+      includeTenantPermissions?: boolean;
+      planModules?: string[];
+    } = {},
+  ): Promise<Permission[]> {
     const permissions = await this.permissionRepository.find({
       order: { id: 'ASC' },
     });
@@ -25,11 +34,11 @@ export class PermissionService {
       return permissions;
     }
 
-    return permissions.filter(
-      (permission) =>
-        !permission.name.startsWith('tenants.') &&
-        !permission.name.startsWith('plans.'),
-    );
+    if (options.planModules) {
+      return filterPermissionsByPlanModules(permissions, options.planModules);
+    }
+
+    return permissions.filter((permission) => !isGlobalPermission(permission.name));
   }
 
   async findOne(id: number): Promise<Permission> {

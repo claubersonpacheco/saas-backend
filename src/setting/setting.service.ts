@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { BunnyStorageService } from '../storage/bunny-storage.service';
+import { Tenant } from '../tenant/tenant.entity';
 import { CreateSettingDto } from './dto/create-setting.dto';
 import { UpdateSettingDto } from './dto/update-setting.dto';
 import { Setting } from './setting.entity';
@@ -14,23 +16,66 @@ type UploadedImageFile = {
 
 type LogoVariant = 'icon' | 'print' | 'white';
 
+export type BrandingResponse = {
+  tenantId: number;
+  name: string;
+  logo: string | null;
+  logoIcon: string | null;
+  logoWhite: string | null;
+};
+
+export type SettingResponse = Omit<
+  Setting,
+  | 'bunnyStorageZoneName'
+  | 'bunnyStorageAccessKey'
+  | 'bunnyStorageCdnDomain'
+  | 'bunnyStorageBaseUrl'
+  | 'bunnyStorageUserFolder'
+  | 'bunnyStorageLogoFolder'
+>;
+
 @Injectable()
 export class SettingService {
   constructor(
     @InjectRepository(Setting)
     private readonly settingRepository: Repository<Setting>,
+    @InjectRepository(Tenant)
+    private readonly tenantRepository: Repository<Tenant>,
+    private readonly bunnyStorageService: BunnyStorageService,
   ) {}
 
-  findAll(tenantId: number): Promise<Setting[]> {
-    return this.settingRepository.find({
+  private sanitizeSetting(setting: Setting): SettingResponse {
+    const {
+      bunnyStorageZoneName,
+      bunnyStorageAccessKey,
+      bunnyStorageCdnDomain,
+      bunnyStorageBaseUrl,
+      bunnyStorageUserFolder,
+      bunnyStorageLogoFolder,
+      ...safeSetting
+    } = setting;
+    void bunnyStorageZoneName;
+    void bunnyStorageAccessKey;
+    void bunnyStorageCdnDomain;
+    void bunnyStorageBaseUrl;
+    void bunnyStorageUserFolder;
+    void bunnyStorageLogoFolder;
+
+    return safeSetting;
+  }
+
+  async findAll(tenantId: number): Promise<SettingResponse[]> {
+    const settings = await this.settingRepository.find({
       where: { tenantId },
       order: {
         id: 'ASC',
       },
     });
+
+    return settings.map((setting) => this.sanitizeSetting(setting));
   }
 
-  async findOne(id: number, tenantId: number): Promise<Setting> {
+  private async findEntity(id: number, tenantId: number): Promise<Setting> {
     const setting = await this.settingRepository.findOneBy({ id, tenantId });
 
     if (!setting) {
@@ -40,25 +85,55 @@ export class SettingService {
     return setting;
   }
 
-  async create(createSettingDto: CreateSettingDto, tenantId: number): Promise<Setting> {
+  async findOne(id: number, tenantId: number): Promise<SettingResponse> {
+    return this.sanitizeSetting(await this.findEntity(id, tenantId));
+  }
+
+  async findBrandingByTenantSlug(tenantSlug: string): Promise<BrandingResponse> {
+    const slug = this.sanitizePathSegment(tenantSlug);
+    const tenant = await this.tenantRepository.findOneBy({
+      slug,
+      active: true,
+    });
+
+    if (!tenant) {
+      throw new NotFoundException(`Tenant with slug ${slug} not found.`);
+    }
+
+    const [setting] = await this.settingRepository.find({
+      where: { tenantId: tenant.id },
+      order: { id: 'DESC' },
+      take: 1,
+    });
+
+    return {
+      tenantId: tenant.id,
+      name: setting?.name || tenant.name,
+      logo: setting?.logo || setting?.logoWhite || setting?.logoIcon || null,
+      logoIcon: setting?.logoIcon || null,
+      logoWhite: setting?.logoWhite || null,
+    };
+  }
+
+  async create(createSettingDto: CreateSettingDto, tenantId: number): Promise<SettingResponse> {
     const setting = this.settingRepository.create({
       ...createSettingDto,
       tenantId,
     });
-    return this.settingRepository.save(setting);
+    return this.sanitizeSetting(await this.settingRepository.save(setting));
   }
 
   async update(
     id: number,
     updateSettingDto: UpdateSettingDto,
     tenantId: number,
-  ): Promise<Setting> {
-    const setting = await this.findOne(id, tenantId);
+  ): Promise<SettingResponse> {
+    const setting = await this.findEntity(id, tenantId);
     const updatedSetting = this.settingRepository.merge(
       setting,
       updateSettingDto,
     );
-    return this.settingRepository.save(updatedSetting);
+    return this.sanitizeSetting(await this.settingRepository.save(updatedSetting));
   }
 
   private getImageExtension(file: UploadedImageFile): string {
@@ -82,38 +157,6 @@ export class SettingService {
       .toLowerCase();
   }
 
-  private getBunnyStorageConfig(setting: Setting): {
-    zoneName: string;
-    accessKey: string;
-    publicBaseUrl: string;
-    logoFolder: string;
-  } {
-    const zoneName = setting.bunnyStorageZoneName?.trim();
-    const accessKey = setting.bunnyStorageAccessKey?.trim();
-    const publicBaseUrl = (
-      setting.bunnyStorageCdnDomain ||
-      setting.bunnyStorageBaseUrl ||
-      ''
-    )
-      .trim()
-      .replace(/\/+$/, '');
-
-    if (!zoneName || !accessKey || !publicBaseUrl) {
-      throw new BadRequestException(
-        'Configure bunnyStorageZoneName, bunnyStorageAccessKey e bunnyStorageCdnDomain/baseUrl antes de enviar a logo.',
-      );
-    }
-
-    return {
-      zoneName,
-      accessKey,
-      publicBaseUrl: /^https?:\/\//.test(publicBaseUrl)
-        ? publicBaseUrl
-        : `https://${publicBaseUrl}`,
-      logoFolder: setting.bunnyStorageLogoFolder?.trim() || 'logos',
-    };
-  }
-
   private normalizeLogoVariant(type?: string): LogoVariant {
     if (type === 'icon' || type === 'print' || type === 'white') {
       return type;
@@ -129,8 +172,8 @@ export class SettingService {
     tenantId: number,
     file?: UploadedImageFile,
     type: string = 'white',
-  ): Promise<Setting> {
-    const setting = await this.findOne(id, tenantId);
+  ): Promise<SettingResponse> {
+    const setting = await this.findEntity(id, tenantId);
     const logoVariant = this.normalizeLogoVariant(type);
 
     if (!file) {
@@ -147,31 +190,29 @@ export class SettingService {
       throw new BadRequestException('A logo deve ter no maximo 5MB.');
     }
 
-    const config = this.getBunnyStorageConfig(setting);
-    const baseName = this.sanitizePathSegment(setting.name || `setting-${setting.id}`);
-    const fileName = `${setting.id}-${Date.now()}-${baseName || 'logo'}.${extension}`;
-    const storagePath = `${config.logoFolder.replace(/\/+$/, '')}/${logoVariant}/${fileName}`;
-    const uploadUrl = `https://storage.bunnycdn.com/${config.zoneName}/${storagePath}`;
-    const uploadBody = new ArrayBuffer(file.buffer.byteLength);
-    new Uint8Array(uploadBody).set(file.buffer);
+    const config = await this.bunnyStorageService.getConfig(tenantId);
+    const tenant = await this.tenantRepository.findOneBy({ id: tenantId });
 
-    const response = await fetch(uploadUrl, {
-      method: 'PUT',
-      headers: {
-        AccessKey: config.accessKey,
-        'Content-Type': file.mimetype,
-      },
-      body: uploadBody,
-    });
-
-    if (!response.ok) {
-      const body = await response.text().catch(() => '');
-      throw new BadRequestException(
-        `Nao foi possivel enviar a logo para Bunny Storage. ${body || response.statusText}`,
-      );
+    if (!tenant) {
+      throw new NotFoundException(`Tenant with id ${tenantId} not found.`);
     }
 
-    const logoUrl = `${config.publicBaseUrl}/${storagePath}`;
+    const baseName = this.sanitizePathSegment(setting.name || `setting-${setting.id}`);
+    const fileName = `${setting.id}-${Date.now()}-${baseName || 'logo'}.${extension}`;
+    const storagePath = this.bunnyStorageService.buildStoragePath({
+      tenantId,
+      tenantFolder: tenant.code,
+      tenantIsCentral: tenant.planId === null,
+      folder: config.logoFolder,
+      defaultFolder: 'logos',
+      segments: [logoVariant],
+      fileName,
+    });
+    const logoUrl = await this.bunnyStorageService.upload(
+      storagePath,
+      file,
+      tenantId,
+    );
 
     if (logoVariant === 'icon') {
       setting.logoIcon = logoUrl;
@@ -182,11 +223,11 @@ export class SettingService {
       setting.logo = logoUrl;
     }
 
-    return this.settingRepository.save(setting);
+    return this.sanitizeSetting(await this.settingRepository.save(setting));
   }
 
   async remove(id: number, tenantId: number): Promise<{ message: string }> {
-    const setting = await this.findOne(id, tenantId);
+    const setting = await this.findEntity(id, tenantId);
     await this.settingRepository.remove(setting);
 
     return {

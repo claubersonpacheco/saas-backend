@@ -17,6 +17,7 @@ describe('UserController', () => {
             create: jest.fn(),
             update: jest.fn(),
             uploadPhoto: jest.fn(),
+            removePhoto: jest.fn(),
             remove: jest.fn(),
           },
         },

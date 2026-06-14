@@ -19,8 +19,7 @@ import { RequirePermissions } from '../auth/decorators/require-permissions.decor
 import type { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import { CreateSettingDto } from './dto/create-setting.dto';
 import { UpdateSettingDto } from './dto/update-setting.dto';
-import { Setting } from './setting.entity';
-import { SettingService } from './setting.service';
+import { SettingResponse, SettingService } from './setting.service';
 
 type UploadedImageFile = {
   buffer: Buffer;
@@ -36,7 +35,7 @@ export class SettingController {
 
   @Get()
   @RequirePermissions('settings.read')
-  findAll(@CurrentUser() user: AuthenticatedUser): Promise<Setting[]> {
+  findAll(@CurrentUser() user: AuthenticatedUser): Promise<SettingResponse[]> {
     return this.settingService.findAll(user.tenantId);
   }
 
@@ -45,7 +44,7 @@ export class SettingController {
   findOne(
     @Param('id', ParseIntPipe) id: number,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<Setting> {
+  ): Promise<SettingResponse> {
     return this.settingService.findOne(id, user.tenantId);
   }
 
@@ -54,7 +53,7 @@ export class SettingController {
   create(
     @Body() createSettingDto: CreateSettingDto,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<Setting> {
+  ): Promise<SettingResponse> {
     return this.settingService.create(createSettingDto, user.tenantId);
   }
 
@@ -64,7 +63,7 @@ export class SettingController {
     @Param('id', ParseIntPipe) id: number,
     @Body() updateSettingDto: UpdateSettingDto,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<Setting> {
+  ): Promise<SettingResponse> {
     return this.settingService.update(id, updateSettingDto, user.tenantId);
   }
 
@@ -75,7 +74,7 @@ export class SettingController {
     @Param('id', ParseIntPipe) id: number,
     @UploadedFile() file: UploadedImageFile,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<Setting> {
+  ): Promise<SettingResponse> {
     return this.settingService.uploadLogo(id, user.tenantId, file);
   }
 
@@ -87,7 +86,7 @@ export class SettingController {
     @Param('type') type: string,
     @UploadedFile() file: UploadedImageFile,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<Setting> {
+  ): Promise<SettingResponse> {
     return this.settingService.uploadLogo(id, user.tenantId, file, type);
   }
 

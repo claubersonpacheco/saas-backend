@@ -20,6 +20,13 @@ export class User {
   @PrimaryGeneratedColumn()
   id: number;
 
+  @Index({ unique: true })
+  @Column({
+    type: 'uuid',
+    default: () => 'gen_random_uuid()',
+  })
+  uuid: string;
+
   @Column({ name: 'tenant_id' })
   tenantId: number;
 

@@ -24,6 +24,10 @@ import { RoleService } from './role.service';
 export class RoleController {
   constructor(private readonly roleService: RoleService) {}
 
+  private planModulesFor(user: AuthenticatedUser, isMaster: boolean): string[] | undefined {
+    return isMaster ? undefined : (user.tenantPlan?.modules ?? []);
+  }
+
   @Get()
   @RequirePermissions('roles.read')
   findAll(@CurrentUser() user: AuthenticatedUser): Promise<Role[]> {
@@ -39,7 +43,13 @@ export class RoleController {
     @Param('id', ParseIntPipe) id: number,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<Role> {
-    return this.roleService.findOne(id, user.tenantId);
+    const isMaster = user.role?.name.toLowerCase() === 'master';
+
+    return this.roleService.findOne(
+      id,
+      user.tenantId,
+      this.planModulesFor(user, isMaster),
+    );
   }
 
   @Post()
@@ -55,6 +65,7 @@ export class RoleController {
       user.tenantId,
       isMaster,
       isMaster,
+      this.planModulesFor(user, isMaster),
     );
   }
 
@@ -73,6 +84,7 @@ export class RoleController {
       user.tenantId,
       isMaster,
       isMaster,
+      this.planModulesFor(user, isMaster),
     );
   }
 

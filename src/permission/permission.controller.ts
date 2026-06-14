@@ -27,8 +27,11 @@ export class PermissionController {
   @Get()
   @RequirePermissions('permissions.read')
   findAll(@CurrentUser() user: AuthenticatedUser): Promise<Permission[]> {
+    const isMaster = user.role?.name.toLowerCase() === 'master';
+
     return this.permissionService.findAll({
-      includeTenantPermissions: user.role?.name.toLowerCase() === 'master',
+      includeTenantPermissions: isMaster,
+      planModules: isMaster ? undefined : (user.tenantPlan?.modules ?? []),
     });
   }
 

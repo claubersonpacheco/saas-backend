@@ -5,7 +5,6 @@ import {
   ForbiddenException,
   Get,
   Param,
-  ParseIntPipe,
   Patch,
   Post,
   UploadedFile,
@@ -48,6 +47,10 @@ export class UserController {
     );
   }
 
+  private canManageTargetUser(user: AuthenticatedUser, identifier: string): boolean {
+    return this.hasPermission(user, 'users.update') || String(user.sub) === identifier;
+  }
+
   @Get()
   @RequirePermissions('users.read')
   findAll(@CurrentUser() user: AuthenticatedUser): Promise<UserResponse[]> {
@@ -57,7 +60,7 @@ export class UserController {
   @Get(':id')
   @RequirePermissions('users.read')
   findOne(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<UserResponse> {
     return this.userService.findOne(id, user.tenantId);
@@ -76,7 +79,7 @@ export class UserController {
 
   @Patch(':id')
   update(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id') id: string,
     @Body() updateUserDto: UpdateUserDto,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<UserResponse> {
@@ -85,7 +88,7 @@ export class UserController {
     }
 
     if (!this.hasPermission(user, 'users.update')) {
-      if (user.sub !== id) {
+      if (String(user.sub) !== id) {
         throw new ForbiddenException('User does not have permission.');
       }
 
@@ -105,21 +108,33 @@ export class UserController {
   @Post(':id/photo')
   @UseInterceptors(FileInterceptor('photo'))
   uploadPhoto(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id') id: string,
     @UploadedFile() file: UploadedImageFile,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<UserResponse> {
-    if (!this.hasPermission(user, 'users.update') && user.sub !== id) {
+    if (!this.canManageTargetUser(user, id)) {
       throw new ForbiddenException('User does not have permission.');
     }
 
     return this.userService.uploadPhoto(id, user.tenantId, file);
   }
 
+  @Delete(':id/photo')
+  removePhoto(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<UserResponse> {
+    if (!this.canManageTargetUser(user, id)) {
+      throw new ForbiddenException('User does not have permission.');
+    }
+
+    return this.userService.removePhoto(id, user.tenantId);
+  }
+
   @Delete(':id')
   @RequirePermissions('users.delete')
   remove(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<{ message: string }> {
     return this.userService.remove(id, user.tenantId);

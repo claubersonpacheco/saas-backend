@@ -26,6 +26,14 @@ export class Tenant {
   @Column({ type: 'varchar', length: 120 })
   slug: string;
 
+  @Index({ unique: true })
+  @Column({
+    name: 'code',
+    type: 'uuid',
+    default: () => 'gen_random_uuid()',
+  })
+  code: string;
+
   @Column({ type: 'boolean', default: true })
   active: boolean;
 

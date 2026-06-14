@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
 import { BudgetModule } from './budget/budget.module';
 import { typeOrmConfig } from './database/typeorm.config';
+import { GlobalSettingModule } from './global-setting/global-setting.module';
 import { PermissionModule } from './permission/permission.module';
 import { PlanModule } from './plan/plan.module';
 import { RoleModule } from './role/role.module';
@@ -16,12 +17,14 @@ import { TenantModule } from './tenant/tenant.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      envFilePath: ['.env', 'backend/.env', '../.env'],
     }),
     TypeOrmModule.forRoot({
       ...typeOrmConfig,
       autoLoadEntities: true,
     }),
     AuthModule,
+    GlobalSettingModule,
     UserModule,
     SettingModule,
     TenantModule,

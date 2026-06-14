@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 import { In, Repository } from 'typeorm';
 import { Permission } from '../permission/permission.entity';
+import { filterPermissionsByPlanModules } from '../permission/permission-plan.util';
 import { Plan } from '../plan/plan.entity';
 import { Role } from '../role/role.entity';
 import { User } from '../user/user.entity';
@@ -39,15 +40,6 @@ const TENANT_ADMIN_PERMISSIONS = [
   'services.update',
   'services.delete',
 ];
-
-const MODULE_PERMISSIONS: Record<string, string[]> = {
-  services: [
-    'services.read',
-    'services.create',
-    'services.update',
-    'services.delete',
-  ],
-};
 
 @Injectable()
 export class TenantService {
@@ -124,7 +116,24 @@ export class TenantService {
     return plan;
   }
 
-  private async createAdminRole(tenantId: number): Promise<Role> {
+  private async getAdminPermissions(plan: Plan | null): Promise<Permission[]> {
+    if (!plan) {
+      return this.permissionRepository.findBy({
+        name: In(TENANT_ADMIN_PERMISSIONS),
+      });
+    }
+
+    const permissions = await this.permissionRepository.find({
+      order: { id: 'ASC' },
+    });
+
+    return filterPermissionsByPlanModules(permissions, plan.modules ?? []);
+  }
+
+  private async createAdminRole(
+    tenantId: number,
+    plan: Plan | null,
+  ): Promise<Role> {
     const existing = await this.roleRepository.findOneBy({
       tenantId,
       name: 'admin',
@@ -134,9 +143,7 @@ export class TenantService {
       return existing;
     }
 
-    const permissions = await this.permissionRepository.findBy({
-      name: In(TENANT_ADMIN_PERMISSIONS),
-    });
+    const permissions = await this.getAdminPermissions(plan);
     const role = this.roleRepository.create({
       tenantId,
       name: 'admin',
@@ -151,17 +158,6 @@ export class TenantService {
     tenantId: number,
     plan: Plan | null,
   ): Promise<void> {
-    const modules = new Set(
-      (plan?.modules ?? []).map((module) => this.normalizeModule(module)),
-    );
-    const permissionNames = Object.entries(MODULE_PERMISSIONS)
-      .filter(([module]) => modules.has(module))
-      .flatMap(([, permissions]) => permissions);
-
-    if (!permissionNames.length) {
-      return;
-    }
-
     const adminRole = await this.roleRepository.findOne({
       where: { tenantId, name: 'admin' },
       relations: { permissions: true },
@@ -171,9 +167,42 @@ export class TenantService {
       return;
     }
 
-    const permissions = await this.permissionRepository.findBy({
-      name: In(permissionNames),
+    const permissions = await this.getAdminPermissions(plan);
+    const currentPermissionIds =
+      adminRole.permissions?.map((permission) => permission.id) ?? [];
+    const nextPermissionIds = permissions.map((permission) => permission.id);
+    const permissionsToAdd = nextPermissionIds.filter(
+      (permissionId) => !currentPermissionIds.includes(permissionId),
+    );
+    const permissionsToRemove = currentPermissionIds.filter(
+      (permissionId) => !nextPermissionIds.includes(permissionId),
+    );
+
+    if (!permissionsToAdd.length && !permissionsToRemove.length) {
+      return;
+    }
+
+    await this.roleRepository
+      .createQueryBuilder()
+      .relation(Role, 'permissions')
+      .of(adminRole)
+      .addAndRemove(permissionsToAdd, permissionsToRemove);
+  }
+
+  private async addAdminModulePermissions(
+    tenantId: number,
+    plan: Plan | null,
+  ): Promise<void> {
+    const adminRole = await this.roleRepository.findOne({
+      where: { tenantId, name: 'admin' },
+      relations: { permissions: true },
     });
+
+    if (!adminRole) {
+      return;
+    }
+
+    const permissions = await this.getAdminPermissions(plan);
     const existingIds = new Set(
       adminRole.permissions?.map((permission) => permission.id) ?? [],
     );
@@ -309,8 +338,8 @@ export class TenantService {
     });
 
     const createdTenant = await this.tenantRepository.save(tenant);
-    await this.createAdminRole(createdTenant.id);
-    await this.syncAdminModulePermissions(createdTenant.id, plan);
+    await this.createAdminRole(createdTenant.id, plan);
+    await this.addAdminModulePermissions(createdTenant.id, plan);
 
     return createdTenant;
   }
@@ -319,7 +348,7 @@ export class TenantService {
     this.validateAdminPayload(dto);
 
     const tenant = await this.create(dto);
-    const adminRole = await this.createAdminRole(tenant.id);
+    const adminRole = await this.createAdminRole(tenant.id, tenant.plan);
 
     await this.createTenantAdmin(tenant, adminRole, dto);
 

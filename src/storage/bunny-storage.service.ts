@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { GlobalSetting } from '../global-setting/global-setting.entity';
-import { Setting } from '../setting/setting.entity';
 
 type UploadedStorageFile = {
   buffer: Buffer;
@@ -34,8 +33,6 @@ export class BunnyStorageService {
     private readonly configService: ConfigService,
     @InjectRepository(GlobalSetting)
     private readonly globalSettingRepository: Repository<GlobalSetting>,
-    @InjectRepository(Setting)
-    private readonly settingRepository: Repository<Setting>,
   ) {}
 
   private normalizePublicUrl(value?: string | null): string {
@@ -127,45 +124,24 @@ export class BunnyStorageService {
     return pathSegments.join('/');
   }
 
-  private async getLegacyTenantSetting(
-    tenantId?: number,
-  ): Promise<Setting | null> {
-    if (!tenantId) {
-      return null;
-    }
-
-    const [setting] = await this.settingRepository.find({
-      where: { tenantId },
-      order: { id: 'DESC' },
-      take: 1,
-    });
-
-    return setting ?? null;
-  }
-
-  async getConfig(tenantId?: number): Promise<BunnyStorageConfig> {
+  async getConfig(): Promise<BunnyStorageConfig> {
     const [globalSetting] = await this.globalSettingRepository.find({
       order: { id: 'ASC' },
       take: 1,
     });
-    const legacySetting = await this.getLegacyTenantSetting(tenantId);
     const zoneName =
       globalSetting?.bunnyStorageZoneName ||
       this.configService.get<string>('BUNNY_STORAGE_ZONE_NAME') ||
-      legacySetting?.bunnyStorageZoneName ||
       '';
     const accessKey =
       globalSetting?.bunnyStorageAccessKey ||
       this.configService.get<string>('BUNNY_STORAGE_ACCESS_KEY') ||
-      legacySetting?.bunnyStorageAccessKey ||
       '';
     const publicBaseUrl = this.normalizePublicUrl(
       globalSetting?.bunnyStorageCdnDomain ||
         globalSetting?.bunnyStorageBaseUrl ||
         this.configService.get<string>('BUNNY_STORAGE_CDN_DOMAIN') ||
         this.configService.get<string>('BUNNY_STORAGE_BASE_URL') ||
-        legacySetting?.bunnyStorageCdnDomain ||
-        legacySetting?.bunnyStorageBaseUrl ||
         '',
     );
 
@@ -182,12 +158,10 @@ export class BunnyStorageService {
       userFolder:
         globalSetting?.bunnyStorageUserFolder ||
         this.configService.get<string>('BUNNY_STORAGE_USER_FOLDER') ||
-        legacySetting?.bunnyStorageUserFolder ||
         'users',
       logoFolder:
         globalSetting?.bunnyStorageLogoFolder ||
         this.configService.get<string>('BUNNY_STORAGE_LOGO_FOLDER') ||
-        legacySetting?.bunnyStorageLogoFolder ||
         'logos',
     };
   }

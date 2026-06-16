@@ -24,15 +24,7 @@ export type BrandingResponse = {
   logoWhite: string | null;
 };
 
-export type SettingResponse = Omit<
-  Setting,
-  | 'bunnyStorageZoneName'
-  | 'bunnyStorageAccessKey'
-  | 'bunnyStorageCdnDomain'
-  | 'bunnyStorageBaseUrl'
-  | 'bunnyStorageUserFolder'
-  | 'bunnyStorageLogoFolder'
->;
+export type SettingResponse = Setting;
 
 @Injectable()
 export class SettingService {
@@ -45,23 +37,7 @@ export class SettingService {
   ) {}
 
   private sanitizeSetting(setting: Setting): SettingResponse {
-    const {
-      bunnyStorageZoneName,
-      bunnyStorageAccessKey,
-      bunnyStorageCdnDomain,
-      bunnyStorageBaseUrl,
-      bunnyStorageUserFolder,
-      bunnyStorageLogoFolder,
-      ...safeSetting
-    } = setting;
-    void bunnyStorageZoneName;
-    void bunnyStorageAccessKey;
-    void bunnyStorageCdnDomain;
-    void bunnyStorageBaseUrl;
-    void bunnyStorageUserFolder;
-    void bunnyStorageLogoFolder;
-
-    return safeSetting;
+    return setting;
   }
 
   async findAll(tenantId: number): Promise<SettingResponse[]> {

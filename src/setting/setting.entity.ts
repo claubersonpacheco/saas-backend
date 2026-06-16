@@ -42,24 +42,6 @@ export class Setting {
   @Column({ type: 'varchar', length: 512, nullable: true })
   logoWhite: string | null;
 
-  @Column({ type: 'varchar', length: 255, nullable: true })
-  bunnyStorageZoneName: string | null;
-
-  @Column({ type: 'varchar', length: 255, nullable: true })
-  bunnyStorageAccessKey: string | null;
-
-  @Column({ type: 'varchar', length: 512, nullable: true })
-  bunnyStorageCdnDomain: string | null;
-
-  @Column({ type: 'varchar', length: 512, nullable: true })
-  bunnyStorageBaseUrl: string | null;
-
-  @Column({ type: 'varchar', length: 255, nullable: true })
-  bunnyStorageUserFolder: string | null;
-
-  @Column({ type: 'varchar', length: 255, nullable: true })
-  bunnyStorageLogoFolder: string | null;
-
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

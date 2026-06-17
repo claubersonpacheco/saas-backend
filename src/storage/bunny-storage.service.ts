@@ -38,9 +38,7 @@ export class BunnyStorageService {
   private normalizePublicUrl(value?: string | null): string {
     const publicBaseUrl = (value || '').trim().replace(/\/+$/, '');
 
-    if (!publicBaseUrl) {
-      return '';
-    }
+    if (!publicBaseUrl) return '';
 
     return /^https?:\/\//.test(publicBaseUrl)
       ? publicBaseUrl
@@ -57,9 +55,7 @@ export class BunnyStorageService {
   ): string {
     const cleanPublicUrl = publicUrl.trim();
 
-    if (!cleanPublicUrl) {
-      return '';
-    }
+    if (!cleanPublicUrl) return '';
 
     const cleanPublicBaseUrl = publicBaseUrl.replace(/\/+$/, '');
 
@@ -88,12 +84,15 @@ export class BunnyStorageService {
     const folderSegments = this.normalizePathSegment(folder)
       .split('/')
       .filter(Boolean);
+
     const normalizedTenantFolder = tenantFolder
       ? this.normalizePathSegment(tenantFolder).toLowerCase()
       : '';
-    const scopeFolder = tenantIsCentral || !tenantId
-      ? 'central'
-      : `tenant/${normalizedTenantFolder || String(tenantId)}`;
+
+    const scopeFolder =
+      tenantIsCentral || !tenantId
+        ? 'central'
+        : `tenant/${normalizedTenantFolder || String(tenantId)}`;
 
     if (
       folderSegments[0]?.toLowerCase() === 'central' ||
@@ -117,7 +116,7 @@ export class BunnyStorageService {
     const pathSegments = [
       scopeFolder,
       ...folderSegments,
-      ...segments.map((segment) => this.normalizePathSegment(segment)),
+      ...segments.map((s) => this.normalizePathSegment(s)),
       this.normalizePathSegment(fileName),
     ].filter(Boolean);
 
@@ -129,14 +128,17 @@ export class BunnyStorageService {
       order: { id: 'ASC' },
       take: 1,
     });
+
     const zoneName =
       globalSetting?.bunnyStorageZoneName ||
       this.configService.get<string>('BUNNY_STORAGE_ZONE_NAME') ||
       '';
+
     const accessKey =
       globalSetting?.bunnyStorageAccessKey ||
       this.configService.get<string>('BUNNY_STORAGE_ACCESS_KEY') ||
       '';
+
     const publicBaseUrl = this.normalizePublicUrl(
       globalSetting?.bunnyStorageCdnDomain ||
         globalSetting?.bunnyStorageBaseUrl ||
@@ -169,11 +171,12 @@ export class BunnyStorageService {
   async upload(
     storagePath: string,
     file: UploadedStorageFile,
-    tenantId?: number,
   ): Promise<string> {
-    const config = await this.getConfig(tenantId);
+    const config = await this.getConfig();
     const cleanPath = storagePath.replace(/^\/+/, '');
+
     const uploadUrl = `https://storage.bunnycdn.com/${config.zoneName}/${cleanPath}`;
+
     const uploadBody = new ArrayBuffer(file.buffer.byteLength);
     new Uint8Array(uploadBody).set(file.buffer);
 
@@ -196,22 +199,20 @@ export class BunnyStorageService {
     return `${config.publicBaseUrl}/${cleanPath}`;
   }
 
-  async deleteByUrl(publicUrl?: string | null, tenantId?: number): Promise<void> {
-    if (!publicUrl) {
-      return;
-    }
+  async deleteByUrl(publicUrl?: string | null): Promise<void> {
+    if (!publicUrl) return;
 
-    const config = await this.getConfig(tenantId);
+    const config = await this.getConfig();
+
     const storagePath = this.getStoragePathFromPublicUrl(
       publicUrl,
       config.publicBaseUrl,
     );
 
-    if (!storagePath) {
-      return;
-    }
+    if (!storagePath) return;
 
     const deleteUrl = `https://storage.bunnycdn.com/${config.zoneName}/${storagePath}`;
+
     const response = await fetch(deleteUrl, {
       method: 'DELETE',
       headers: {

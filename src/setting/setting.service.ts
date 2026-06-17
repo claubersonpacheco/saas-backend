@@ -166,7 +166,7 @@ export class SettingService {
       throw new BadRequestException('A logo deve ter no maximo 5MB.');
     }
 
-    const config = await this.bunnyStorageService.getConfig(tenantId);
+    const config = await this.bunnyStorageService.getConfig();
     const tenant = await this.tenantRepository.findOneBy({ id: tenantId });
 
     if (!tenant) {
@@ -184,11 +184,7 @@ export class SettingService {
       segments: [logoVariant],
       fileName,
     });
-    const logoUrl = await this.bunnyStorageService.upload(
-      storagePath,
-      file,
-      tenantId,
-    );
+    const logoUrl = await this.bunnyStorageService.upload(storagePath, file);
 
     if (logoVariant === 'icon') {
       setting.logoIcon = logoUrl;

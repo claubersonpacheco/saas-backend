@@ -484,7 +484,7 @@ export class UserService {
       throw new BadRequestException('A foto deve ter no maximo 5MB.');
     }
 
-    const config = await this.bunnyStorageService.getConfig(tenantId);
+    const config = await this.bunnyStorageService.getConfig();
     const fileName = `${user.id}-${Date.now()}-${this.sanitizePathSegment(
       user.username,
     )}.${extension}`;
@@ -496,18 +496,14 @@ export class UserService {
       defaultFolder: 'users',
       fileName,
     });
-    const photoUrl = await this.bunnyStorageService.upload(
-      storagePath,
-      file,
-      tenantId,
-    );
+    const photoUrl = await this.bunnyStorageService.upload(storagePath, file);
 
     const previousPhotoUrl = user.photoUrl;
     user.photoUrl = photoUrl;
     await this.userRepository.save(user);
 
     if (previousPhotoUrl && previousPhotoUrl !== photoUrl) {
-      await this.bunnyStorageService.deleteByUrl(previousPhotoUrl, tenantId);
+      await this.bunnyStorageService.deleteByUrl(previousPhotoUrl);
     }
 
     return this.findOne(user.id, tenantId);
@@ -531,7 +527,7 @@ export class UserService {
 
     if (previousPhotoUrl) {
       try {
-        await this.bunnyStorageService.deleteByUrl(previousPhotoUrl, tenantId);
+        await this.bunnyStorageService.deleteByUrl(previousPhotoUrl);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         this.logger.warn(

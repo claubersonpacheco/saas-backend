@@ -4,11 +4,7 @@ describe('BunnyStorageService', () => {
   let service: BunnyStorageService;
 
   beforeEach(() => {
-    service = new BunnyStorageService(
-      {} as never,
-      {} as never,
-      {} as never,
-    );
+    service = new BunnyStorageService({} as never, {} as never);
   });
 
   describe('buildStoragePath', () => {

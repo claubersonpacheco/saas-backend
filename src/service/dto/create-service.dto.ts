@@ -58,7 +58,7 @@ export class CreateServiceDto {
 
   @IsOptional()
   @IsInt()
-  @Min(1)
+  @Min(0)
   status?: number;
 
   @IsOptional()

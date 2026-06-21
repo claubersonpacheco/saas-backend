@@ -1,5 +1,9 @@
 name: Deploy Micontrol
 
+permissions:
+  contents: read
+  packages: write
+
 on:
   push:
     branches: [ "master" ]

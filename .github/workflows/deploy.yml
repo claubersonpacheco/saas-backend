@@ -1,9 +1,5 @@
 name: Deploy Micontrol
 
-permissions:
-  contents: read
-  packages: write
-
 on:
   push:
     branches: [ "master" ]
@@ -11,6 +7,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - name: Checkout
@@ -25,13 +25,13 @@ jobs:
 
       - name: Build backend
         run: |
-          docker build -t ghcr.io/${{ github.repository_owner }}/micontrol-backend:latest ./saas-backend
-          docker push ghcr.io/${{ github.repository_owner }}/micontrol-backend:latest
+          docker build -t ghcr.io/claubersonpacheco/micontrol-backend:latest ./saas-backend
+          docker push ghcr.io/claubersonpacheco/micontrol-backend:latest
 
       - name: Build frontend
         run: |
-          docker build -t ghcr.io/${{ github.repository_owner }}/micontrol-frontend:latest ./saas-frontend
-          docker push ghcr.io/${{ github.repository_owner }}/micontrol-frontend:latest
+          docker build -t ghcr.io/claubersonpacheco/micontrol-frontend:latest ./saas-frontend
+          docker push ghcr.io/claubersonpacheco/micontrol-frontend:latest
 
   deploy:
     needs: build
@@ -47,4 +47,4 @@ jobs:
           script: |
             cd /home/ferchecosolutions-dockge/htdocs/dockge.ferchecosolutions.com/dockge-stacks/micontrol
             docker compose pull
-            docker compose up -d
+            docker compose up -d --remove-orphans

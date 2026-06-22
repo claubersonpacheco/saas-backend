@@ -5,25 +5,16 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  const allowedOrigins =
-    process.env.CORS_ORIGIN?.split(',')
-      .map((o) => o.trim())
-      .filter(Boolean) || [];
-
   app.enableCors({
-    origin: (origin, callback) => {
-      // permite requests sem origin (Postman, server-to-server)
-      if (!origin) return callback(null, true);
-
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
-      return callback(null, false);
-    },
-    credentials: true,
+    origin: [
+      'https://app.micontrol.es',
+      'http://localhost:5173',
+      'http://88.99.87.248:8282',
+    ],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+    preflightContinue: false, // 🔥 importante
     optionsSuccessStatus: 204,
   });
 
@@ -35,7 +26,7 @@ async function bootstrap() {
     }),
   );
 
-  await app.listen(process.env.PORT ?? 3000, '0.0.0.0');
+  await app.listen(3000, '0.0.0.0');
 }
 
-void bootstrap();
+bootstrap();

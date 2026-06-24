@@ -20,6 +20,7 @@ type ServiceAccessScope = {
   tenantId: number;
   userId: number;
   canSeeAll: boolean;
+  canAssignAll: boolean;
 };
 
 @Injectable()
@@ -65,22 +66,28 @@ export class ServiceService {
   }
 
   findTenantUsers(scope: ServiceAccessScope): Promise<ServiceUserOption[]> {
-    return this.userRepository.find({
-      select: {
-        id: true,
-        username: true,
-        name: true,
-        lastname: true,
-        email: true,
-      },
-      where: scope.canSeeAll
-        ? { tenantId: scope.tenantId }
-        : { id: scope.userId, tenantId: scope.tenantId },
-      order: {
-        name: 'ASC',
-        username: 'ASC',
-      },
-    });
+    const query = this.userRepository
+      .createQueryBuilder('user')
+      .leftJoin('user.role', 'role')
+      .select([
+        'user.id',
+        'user.username',
+        'user.name',
+        'user.lastname',
+        'user.email',
+      ])
+      .where('user.tenant_id = :tenantId', { tenantId: scope.tenantId })
+      .andWhere('(role.id IS NULL OR LOWER(role.name) != :masterRole)', {
+        masterRole: 'master',
+      })
+      .orderBy('user.name', 'ASC')
+      .addOrderBy('user.username', 'ASC');
+
+    if (!scope.canAssignAll) {
+      query.andWhere('user.id = :userId', { userId: scope.userId });
+    }
+
+    return query.getMany();
   }
 
   async create(dto: CreateServiceDto, scope: ServiceAccessScope): Promise<Service> {
@@ -145,7 +152,15 @@ export class ServiceService {
   }
 
   private async findTenantUser(userId: number, tenantId: number): Promise<User> {
-    const user = await this.userRepository.findOneBy({ id: userId, tenantId });
+    const user = await this.userRepository
+      .createQueryBuilder('user')
+      .leftJoin('user.role', 'role')
+      .where('user.id = :userId', { userId })
+      .andWhere('user.tenant_id = :tenantId', { tenantId })
+      .andWhere('(role.id IS NULL OR LOWER(role.name) != :masterRole)', {
+        masterRole: 'master',
+      })
+      .getOne();
 
     if (!user) {
       throw new NotFoundException(`User with id ${userId} not found.`);
@@ -155,7 +170,7 @@ export class ServiceService {
   }
 
   private ensureAssignableUser(userId: number, scope: ServiceAccessScope): void {
-    if (!scope.canSeeAll && userId !== scope.userId) {
+    if (!scope.canAssignAll && userId !== scope.userId) {
       throw new ForbiddenException('User cannot assign services to another user.');
     }
   }

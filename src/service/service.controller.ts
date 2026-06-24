@@ -27,13 +27,22 @@ import { ServiceService, type ServiceUserOption } from './service.service';
 export class ServiceController {
   constructor(private readonly serviceService: ServiceService) {}
 
+  private hasPermission(user: AuthenticatedUser, permission: string): boolean {
+    return user.role?.permissions.some((item) => item.name === permission) ?? false;
+  }
+
   private serviceScope(user: AuthenticatedUser) {
-    const roleName = user.role?.name.toLowerCase();
+    const roleName = user.role?.name.trim().toLowerCase();
+    const isAdminRole = roleName === 'admin' || roleName === 'master';
 
     return {
       tenantId: user.tenantId,
       userId: user.sub,
-      canSeeAll: roleName === 'admin' || roleName === 'master',
+      canSeeAll: isAdminRole,
+      canAssignAll:
+        isAdminRole ||
+        this.hasPermission(user, 'services.create') ||
+        this.hasPermission(user, 'services.update'),
     };
   }
 

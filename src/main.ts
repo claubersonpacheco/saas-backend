@@ -7,7 +7,7 @@ async function bootstrap() {
 
   app.enableCors({
     origin: [
-      'https://app.micontrol.es',
+      'https://app.organizarte.es',
       'http://localhost:5173',
       'http://88.99.87.248:8282',
     ],

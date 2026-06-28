@@ -3,6 +3,7 @@ name: Backend CI/CD
 on:
   push:
     branches: ["master"]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -26,3 +27,37 @@ jobs:
         run: |
           docker build -t ghcr.io/claubersonpacheco/saas-backend:latest .
           docker push ghcr.io/claubersonpacheco/saas-backend:latest
+
+      - name: Deploy Backend
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script: |
+            set -e
+
+            cd "${{ secrets.DEPLOY_PATH }}"
+
+            if [ -n "${{ secrets.GHCR_TOKEN }}" ]; then
+              echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
+            fi
+
+            SERVICE="${{ secrets.BACKEND_SERVICE }}"
+            if [ -z "$SERVICE" ]; then
+              SERVICE="backend"
+            fi
+
+            if docker compose version >/dev/null 2>&1; then
+              docker compose pull "$SERVICE"
+              docker compose up -d "$SERVICE"
+            elif command -v docker-compose >/dev/null 2>&1; then
+              docker-compose pull "$SERVICE"
+              docker-compose up -d "$SERVICE"
+            else
+              echo "Docker Compose nao encontrado no servidor."
+              exit 1
+            fi
+
+            docker image prune -f

@@ -50,26 +50,50 @@ jobs:
           script: |
             set -e
 
+            echo "===== DEBUG ====="
+            echo "Usuário:"
+            whoami
+
+            echo
+            echo "ID:"
+            id
+
+            echo
+            echo "Grupos:"
+            groups
+
+            echo
+            echo "Docker Socket:"
+            ls -l /var/run/docker.sock || true
+
+            echo
+            echo "Docker:"
+            sudo docker version || true
+
+            echo
+            echo "Docker Compose:"
+            sudo docker compose version || true
+
+            echo "================="
+
             cd "${{ secrets.DEPLOY_PATH }}"
 
             if [ -n "${{ secrets.GHCR_TOKEN }}" ]; then
-              echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
+              echo "${{ secrets.GHCR_TOKEN }}" | sudo docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
             fi
 
             SERVICE="${{ secrets.BACKEND_SERVICE }}"
-            if [ -z "$SERVICE" ]; then
-              SERVICE="backend"
-            fi
+            [ -z "$SERVICE" ] && SERVICE="backend"
 
-            if docker compose version >/dev/null 2>&1; then
-              docker compose pull "$SERVICE"
-              docker compose up -d "$SERVICE"
+            if sudo docker compose version >/dev/null 2>&1; then
+              sudo docker compose pull "$SERVICE"
+              sudo docker compose up -d "$SERVICE"
             elif command -v docker-compose >/dev/null 2>&1; then
-              docker-compose pull "$SERVICE"
-              docker-compose up -d "$SERVICE"
+              sudo docker-compose pull "$SERVICE"
+              sudo docker-compose up -d "$SERVICE"
             else
-              echo "Docker Compose não encontrado no servidor."
+              echo "Docker Compose não encontrado."
               exit 1
             fi
 
-            docker image prune -f
+            sudo docker image prune -f
